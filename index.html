@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Neon Tides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Monoton&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="game" aria-label="Neon Tides game view"></canvas>
+
+<div id="hud" hidden>
+  <div id="top-right">
+    <div id="clock">17:36</div>
+    <div id="money">$0</div>
+    <div id="stars" aria-label="Wanted level"></div>
+    <div id="tokens">◆ 0/12</div>
+  </div>
+  <div id="objective" hidden></div>
+  <div id="timer" hidden></div>
+  <div id="notify"></div>
+  <div id="radio"></div>
+  <div id="prompt" hidden></div>
+  <div id="subtitle" hidden></div>
+  <div id="big"><div id="big-title"></div><div id="big-sub"></div></div>
+  <div id="bottom-left">
+    <canvas id="minimap" width="440" height="440"></canvas>
+    <div class="bars">
+      <div id="hp" class="bar hp"><i></i></div>
+      <div id="bust" class="bar bust" hidden><i></i></div>
+    </div>
+  </div>
+  <div id="vehicle-panel" hidden>
+    <div id="veh-name"></div>
+    <div id="speed"><b>0</b><span>km/h</span></div>
+    <div id="veh-hp" class="bar"><i></i></div>
+  </div>
+  <div id="damage"></div>
+  <div id="fade"></div>
+</div>
+
+<canvas id="bigmap" hidden></canvas>
+
+<div id="menu">
+  <div class="menu-panel">
+    <h1 class="logo"><span>NEON</span><span>TIDES</span></h1>
+    <p class="tag">Port Solano, after dark. Steal a ride, take Dex's jobs, outrun the precinct.</p>
+    <button id="play" type="button">PLAY</button>
+    <div class="controls" aria-label="Controls">
+      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Move / drive</span></div>
+      <div><kbd>Mouse</kbd><span>Look (right-drag if the cursor won't lock)</span></div>
+      <div><kbd>F</kbd><span>Enter, exit or steal a car</span></div>
+      <div><kbd>Space</kbd><span>Jump / handbrake</span></div>
+      <div><kbd>Shift</kbd><span>Sprint</span></div>
+      <div><kbd>Click</kbd><span>Punch</span></div>
+      <div><kbd>H</kbd><span>Horn</span><kbd>R</kbd><span>Radio</span></div>
+      <div><kbd>M</kbd><span>Map</span><kbd>P</kbd><span>Pause</span><kbd>N</kbd><span>Mute</span></div>
+    </div>
+    <p class="fine">Find the 12 hidden neon shells. Paint &amp; Pay clears your wanted level.</p>
+  </div>
+</div>
+
+<div id="pause" hidden>
+  <div class="menu-panel small">
+    <h2>Paused</h2>
+    <button id="resume" type="button">RESUME</button>
+    <button id="reset" type="button" class="ghost">Reset progress</button>
+  </div>
+</div>
+
+<div id="touch" hidden>
+  <div id="stick"><div id="knob"></div></div>
+  <div class="tbtns">
+    <button id="t-enter" type="button">ENTER</button>
+    <button id="t-punch" type="button">PUNCH<small>BRAKE</small></button>
+    <button id="t-jump" type="button">JUMP</button>
+    <button id="t-map" type="button">MAP</button>
+  </div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
