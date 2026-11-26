@@ -84,9 +84,29 @@ const UI = {
         }
         break;
       case 'reset':
-        if (confirm('Erase all progress and start over?')) { Store.del(SAVE_KEY); S = newState(); this.closeModal(); Game.goTown(); this.toast('Progress reset. Good luck, miner!'); }
+        this.ask('Erase all progress and start over?', 'Erase progress', () => {
+          Store.del(SAVE_KEY); S = newState(); Game.goTown(); this.toast('Progress reset. Good luck, miner!');
+        });
         break;
+      case 'yes': {
+        const f = this._onYes;
+        this._onYes = null;
+        this.closeModal();
+        if (f) f();
+        break;
+      }
     }
+  },
+  // In-page confirmation (browser confirm() dialogs are blocked in some embeds)
+  ask(text, yesLabel, onYes) {
+    this._onYes = onYes;
+    this.modal(`
+      <h2>Are you sure?</h2>
+      <p>${esc(text)}</p>
+      <div class="menu-col">
+        <button class="btn danger" data-m="yes">${esc(yesLabel)}</button>
+        <button class="btn" data-m="close">Cancel</button>
+      </div>`);
   },
   help() {
     this.modal(`
@@ -155,7 +175,12 @@ const UI = {
       case 'menu': Sfx.play('click'); this.settings(); return;
       case 'sell1': sellGems((id) => id === v, 1); break;
       case 'sellId':
-        if (GEMS[v].boss && !confirm(`Sell the unique ${GEMS[v].name}? Boss hearts give big amulet bonuses.`)) return;
+        if (GEMS[v].boss) {
+          this.ask(`Sell the unique ${GEMS[v].name}? Boss hearts give big amulet bonuses.`, 'Sell it', () => {
+            sellGems((id) => id === v); save(); this.render();
+          });
+          return;
+        }
         sellGems((id) => id === v); break;
       case 'sellLow': sellGems((id) => GEMS[id].r <= 1); break;
       case 'sellAll': sellGems((id) => !GEMS[id].boss); break;

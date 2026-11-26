@@ -80,8 +80,9 @@ const Game = {
       Sfx.play('click');
       if (b.id === 'btn-continue') this.start();
       else if (b.id === 'btn-new') {
-        if (hadSave && !confirm('Start a new game? Your current progress will be erased.')) return;
-        S = newState(); save(); this.start(true);
+        const fresh = () => { S = newState(); save(); this.start(true); };
+        if (hadSave) UI.ask('Start a new game? Your current progress will be erased.', 'Start over', fresh);
+        else fresh();
       } else if (b.id === 'btn-help') UI.help();
     });
     document.addEventListener('visibilitychange', () => {
