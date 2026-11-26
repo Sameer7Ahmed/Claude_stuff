@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#07060b">
+  <title>Gemdelver</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- In-mine HUD -->
+  <div id="hud" class="hidden">
+    <div id="hud-left">
+      <div class="bar hp"><div id="hp-fill"></div><span id="hp-text"></span></div>
+      <div class="hud-row">
+        <span class="pill"><span class="coin"></span><span id="hud-coins">0</span></span>
+        <span class="pill">🎒 <span id="hud-bag">0/10</span></span>
+        <span class="pill">🧪 <span id="hud-potions">0</span></span>
+      </div>
+      <div class="cds">
+        <div class="cd"><span>Dash</span><div class="cdbar"><div id="cd-dash"></div></div></div>
+        <div class="cd"><span>Shot</span><div class="cdbar"><div id="cd-shoot"></div></div></div>
+      </div>
+      <div id="hud-floor"></div>
+    </div>
+    <canvas id="minimap" width="150" height="150"></canvas>
+    <div id="boss-ui" class="hidden">
+      <div id="boss-name"></div>
+      <div class="bar boss"><div id="boss-fill"></div></div>
+      <div id="escape-wrap" class="hidden"><span>DISTANCE</span><div class="bar escape"><div id="escape-fill"></div></div></div>
+      <div id="boss-state"></div>
+    </div>
+  </div>
+
+  <!-- Touch controls -->
+  <div id="touch" class="hidden">
+    <div id="stick-zone"><div id="stick-base"><div id="stick-knob"></div></div></div>
+    <div id="touch-btns">
+      <button data-act="pause" class="tb small top-right" aria-label="Pause">⏸</button>
+      <button data-act="recall" class="tb small" aria-label="Recall">⤴</button>
+      <button data-act="potion" class="tb small" aria-label="Potion">🧪</button>
+      <button data-act="dash" class="tb" aria-label="Dash">💨</button>
+      <button data-act="shoot" class="tb" aria-label="Shoot">🎯</button>
+      <button data-act="swing" class="tb big" aria-label="Swing">⛏️</button>
+    </div>
+  </div>
+
+  <div id="town" class="hidden"></div>
+  <div id="toasts"></div>
+  <div id="bigfind"></div>
+  <div id="modal" class="hidden"></div>
+
+  <!-- Title screen -->
+  <div id="title">
+    <div class="title-card">
+      <div class="logo">GEM<span>DELVER</span></div>
+      <p class="tagline">Dig for dazzling gemstones. Sell them. Gear up.<br>Then hunt the <b>living gems</b> that fight back — and run.</p>
+      <div class="menu-col">
+        <button class="btn primary" id="btn-continue">Continue</button>
+        <button class="btn primary" id="btn-new">Start mining</button>
+        <button class="btn" id="btn-help">How to play</button>
+      </div>
+      <p class="muted small">Keyboard + mouse or touch · progress saves automatically</p>
+    </div>
+  </div>
+
+  <script src="js/util.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/gfx.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
