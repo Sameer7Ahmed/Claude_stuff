@@ -18,7 +18,7 @@ export function colorFor(type) {
 
 // Choose a random road segment whose midpoint is between minD and maxD from the player.
 function segmentNear(G, minD, maxD, avoidView) {
-  const W = G.world, P = G.player.pos;
+  const W = G.world, P = G.player.outdoorPos;
   const fx = Math.sin(G.cam.yaw), fz = Math.cos(G.cam.yaw);
   for (let tries = 0; tries < 40; tries++) {
     const a = W.nodes[Math.floor(Math.random() * W.nodes.length)];
@@ -78,7 +78,7 @@ export function initTraffic(G, count) {
 }
 
 export function manageTraffic(G, target) {
-  const P = G.player.pos;
+  const P = G.player.outdoorPos;
   let traffic = 0;
   for (let i = G.vehicles.length - 1; i >= 0; i--) {
     const v = G.vehicles[i];

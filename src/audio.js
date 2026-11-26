@@ -171,6 +171,77 @@ export class AudioSys {
   checkpoint() { this.tone('sine', 988, 0.15, 0.2); this.tone('sine', 1318, 0.2, 0.2, 0.09); }
   spray() { this.burst('highpass', 3000, 1.2, 0.25, 0.5); }
 
+  // ------------------------------------------------------------ combat
+  gun(type, dist = 0, suppressed = false) {
+    if (!this.ready) return;
+    const v = 1 / (1 + dist / 22);
+    if (v < 0.03) return;
+    if (suppressed) { this.burst('highpass', 2400, 0.09, 0.22 * v, 0.6); this.tone('sine', 420, 0.05, 0.08 * v, 0, 200); return; }
+    switch (type) {
+      case 'pistol':
+        this.burst('bandpass', 1700, 0.2, 0.75 * v, 0.7, 500);
+        this.tone('sine', 170, 0.12, 0.45 * v, 0, 55);
+        break;
+      case 'smg':
+        this.burst('bandpass', 2300, 0.11, 0.55 * v, 0.8, 900);
+        this.tone('square', 130, 0.05, 0.12 * v, 0, 60);
+        break;
+      case 'shotgun':
+        this.burst('lowpass', 1300, 0.55, 1.0 * v, 0.5, 90);
+        this.tone('sine', 95, 0.35, 0.7 * v, 0, 32);
+        break;
+      default:
+        this.burst('bandpass', 3000, 0.22, 0.75 * v, 0.7, 700);
+        this.burst('highpass', 6000, 0.05, 0.4 * v, 0.5);
+        this.tone('sine', 120, 0.16, 0.45 * v, 0, 45);
+    }
+  }
+  empty() { this.tone('square', 2200, 0.025, 0.06); }
+  reload() { this.tone('square', 900, 0.03, 0.06); this.tone('square', 1400, 0.03, 0.06, 0.45); this.tone('square', 700, 0.04, 0.07, 0.9); }
+  whiz() { this.burst('bandpass', 4200, 0.12, 0.2, 3, 1500); }
+  hitmark(kill) { this.tone('triangle', kill ? 1500 : 2600, kill ? 0.12 : 0.04, kill ? 0.14 : 0.08); }
+  equip() { this.tone('square', 600, 0.03, 0.05); this.tone('square', 1100, 0.03, 0.05, 0.06); }
+  buy() { this.tone('triangle', 1568, 0.08, 0.15); this.tone('triangle', 2093, 0.18, 0.15, 0.07); this.burst('highpass', 5000, 0.12, 0.08); }
+  deny() { this.tone('square', 220, 0.12, 0.08); this.tone('square', 180, 0.16, 0.08, 0.1); }
+  click() { this.tone('triangle', 1200, 0.03, 0.05); }
+  vault() { this.tone('sawtooth', 55, 2.4, 0.25, 0, 35); this.burst('lowpass', 400, 2.0, 0.4, 0.8, 80); this.tone('sine', 140, 0.5, 0.3, 1.9, 60); }
+  slot(win) {
+    for (let i = 0; i < 8; i++) this.tone('square', 600 + i * 90, 0.05, 0.04, i * 0.07);
+    if (win) [72, 76, 79, 84, 88].forEach((m, i) => this.tone('triangle', mtof(m), 0.2, 0.12, 0.6 + i * 0.08));
+  }
+  bleep() { this.tone(Math.random() < 0.5 ? 'square' : 'triangle', 300 + Math.random() * 1200, 0.06 + Math.random() * 0.1, 0.025); }
+
+  // looping alarm and drill, switched on and off by the heist
+  setLoop(name, on) {
+    if (!this.ready) return;
+    const ctx = this.ctx;
+    if (!this.loops) this.loops = {};
+    let L = this.loops[name];
+    if (!L) {
+      const gain = ctx.createGain(); gain.gain.value = 0;
+      gain.connect(this.master);
+      if (name === 'alarm') {
+        const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = 820;
+        const lfo = ctx.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 2.2;
+        const amt = ctx.createGain(); amt.gain.value = 160;
+        lfo.connect(amt).connect(o.frequency);
+        const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 2400;
+        o.connect(f).connect(gain); o.start(); lfo.start();
+        L = { gain, vol: 0.05 };
+      } else {
+        const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 118;
+        const src = ctx.createBufferSource(); src.buffer = this.noise; src.loop = true;
+        const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 3200; f.Q.value = 2;
+        const og = ctx.createGain(); og.gain.value = 0.5;
+        o.connect(og).connect(gain); src.connect(f).connect(gain);
+        o.start(); src.start();
+        L = { gain, vol: 0.09 };
+      }
+      this.loops[name] = L;
+    }
+    L.gain.gain.setTargetAtTime(on ? L.vol : 0, ctx.currentTime, 0.15);
+  }
+
   // ------------------------------------------------------------ radio
   scheduleRadio() {
     const st = STATIONS[this.station];

@@ -11,7 +11,9 @@ import {
 import { palmGeometries, buildBoat, MAT } from './models.js';
 
 // --------------------------------------------------------------- colliders
-class ColliderGrid {
+// Axis-aligned boxes in a uniform grid. Boxes carry a vertical extent (y0..y1)
+// for bullet raycasts and can be switched off (doors, vault, gates).
+export class ColliderGrid {
   constructor(cell = 16) {
     this.cell = cell;
     this.map = new Map();
@@ -20,6 +22,8 @@ class ColliderGrid {
   }
   key(cx, cz) { return (cx + 512) * 4096 + (cz + 512); }
   add(b) {
+    if (b.y0 === undefined) b.y0 = 0;
+    if (b.y1 === undefined) b.y1 = b.h ?? 50;
     this.list.push(b);
     b._s = 0;
     const c = this.cell;
@@ -42,6 +46,7 @@ class ColliderGrid {
         for (const b of arr) {
           if (b._s === s) continue;
           b._s = s;
+          if (b.disabled) continue;
           if (b.maxX < minX || b.minX > maxX || b.maxZ < minZ || b.minZ > maxZ) continue;
           out.push(b);
         }
@@ -49,19 +54,23 @@ class ColliderGrid {
     }
     return out;
   }
-  pointBlocked(x, z, pad = 0) {
+  // minH ignores low boxes (counters, tables) so people can see over them.
+  pointBlocked(x, z, pad = 0, minH = 0) {
     const arr = this.map.get(this.key(Math.floor(x / this.cell), Math.floor(z / this.cell)));
     if (!arr) return false;
-    for (const b of arr) if (x > b.minX - pad && x < b.maxX + pad && z > b.minZ - pad && z < b.maxZ + pad) return true;
+    for (const b of arr) {
+      if (b.disabled || b.y1 - b.y0 < minH) continue;
+      if (x > b.minX - pad && x < b.maxX + pad && z > b.minZ - pad && z < b.maxZ + pad) return true;
+    }
     return false;
   }
   // Line of sight test sampled every `step` units.
-  lineBlocked(ax, az, bx, bz, step = 3) {
+  lineBlocked(ax, az, bx, bz, step = 3, minH = 0) {
     const d = Math.hypot(bx - ax, bz - az);
     const n = Math.ceil(d / step);
     for (let i = 1; i < n; i++) {
       const t = i / n;
-      if (this.pointBlocked(ax + (bx - ax) * t, az + (bz - az) * t)) return true;
+      if (this.pointBlocked(ax + (bx - ax) * t, az + (bz - az) * t, 0, minH)) return true;
     }
     return false;
   }
@@ -101,7 +110,7 @@ export function buildWorld(scene, quality) {
   const colliders = new ColliderGrid(16);
   const W = {
     colliders, blocks: [], ramps: [], lampsHead: null, signs: [], buildingMats: [],
-    specials: {}, tokenSpots: [], parkingSpots: [], palms: [], neonMats: [],
+    specials: {}, tokenSpots: [], parkingSpots: [], palms: [], neonMats: [], doors: {},
   };
 
   const deco = [decoFacade(11), decoFacade(12)];
@@ -160,8 +169,9 @@ export function buildWorld(scene, quality) {
     return signMatCache.get(k);
   }
   const signGeo = new THREE.PlaneGeometry(1, 0.25);
-  function addSign(b, word, color, side, y, width = 6) {
-    const cx = (b.x0 + b.x1) / 2, cz = (b.z0 + b.z1) / 2;
+  // `along` overrides the sign's position along the facade (defaults to its centre)
+  function addSign(b, word, color, side, y, width = 6, along = null) {
+    const cx = along ?? (b.x0 + b.x1) / 2, cz = along ?? (b.z0 + b.z1) / 2;
     let x = cx, z = cz, rot = 0;
     if (side === 'n') { z = b.z0 - 0.12; rot = Math.PI; }
     if (side === 's') { z = b.z1 + 0.12; rot = 0; }
@@ -174,6 +184,18 @@ export function buildWorld(scene, quality) {
     scene.add(m);
     W.signs.push(m);
   }
+  // A doorway on a facade: dark door slab, neon transom, and a stand point outside.
+  const SIDE_N = { n: [0, -1], s: [0, 1], w: [-1, 0], e: [1, 0] };
+  function addDoor(id, x, z, side, neon) {
+    const [nx, nz] = SIDE_N[side];
+    const along = side === 'n' || side === 's';
+    propGeos.push(cbox(along ? 2.6 : 0.25, 2.9, along ? 0.25 : 2.6, x + nx * 0.06, 1.45, z + nz * 0.06, '#15131c'));
+    propGeos.push(cbox(along ? 0.12 : 0.3, 2.9, along ? 0.3 : 0.12, x + nx * 0.1 + (along ? 1.36 : 0), 1.45, z + nz * 0.1 + (along ? 0 : 1.36), '#e8e8e8'));
+    propGeos.push(cbox(along ? 0.12 : 0.3, 2.9, along ? 0.3 : 0.12, x + nx * 0.1 - (along ? 1.36 : 0), 1.45, z + nz * 0.1 - (along ? 0 : 1.36), '#e8e8e8'));
+    neonGeos[neon].push(cbox(along ? 2.9 : 0.3, 0.18, along ? 0.3 : 2.9, x + nx * 0.15, 3.05, z + nz * 0.15, '#ffffff'));
+    W.doors[id] = { x: x + nx * 1.7, z: z + nz * 1.7, h: Math.atan2(nx, nz) };
+  }
+
   // side of building b closest to the block edge
   function streetSide(b, blk) {
     const opts = [['n', b.z0 - blk.z0], ['s', blk.z1 - b.z1], ['w', b.x0 - blk.x0], ['e', blk.x1 - b.x1]];
@@ -277,7 +299,8 @@ export function buildWorld(scene, quality) {
         neonBand({ ...t2 }, 149.6, 'gold');
         propGeos.push(cbox(1.2, 22, 1.2, blk.cx, 161, (t2.z0 + t2.z1) / 2, '#d9d9d9'));
         addSign(b, 'SOLANO BANK', PALETTE.neonGold, 's', 9, 12);
-        W.specials.bank = { x: blk.cx, z: iz1 - 4 };
+        addDoor('bank', blk.cx, b.z1, 's', 'gold');
+        W.specials.bank = { x: W.doors.bank.x, z: W.doors.bank.z };
         W.tokenSpots.push([ix0 + 2, iz1 - 2]);
         continue;
       }
@@ -290,6 +313,8 @@ export function buildWorld(scene, quality) {
         neonBand(b2, 7.7, 'pink');
         propGeos.push(cbox(16, 0.3, 12, ix1 - 14, CURB + 0.1, iz1 - 14, '#2fb7d6'));
         W.specials.motel = { x: ix1 - 20, z: iz0 + 24 };
+        addDoor('motel', ix0 + 26, b.z1, 's', 'pink');
+        W.specials.garage = { x: ix0 + 20, z: iz0 + 30, h: Math.PI / 2 };
         continue;
       }
       if (isSpecial(i, j, 'marina')) {
@@ -298,6 +323,47 @@ export function buildWorld(scene, quality) {
         addSign(b, 'MARINA STORAGE', PALETTE.neonCyan, 'e', 9, 12);
         addBuilding(ix0 + 30, iz0, ix1, iz0 + 20, 10, 1, '#b0bec5');
         W.specials.marina = { x: ix1 - 10, z: iz1 - 12 };
+        // Dex's lockup: a roll-up garage door where hot cars get bought
+        propGeos.push(cbox(0.3, 4.2, 6.5, b.x1 + 0.1, 2.1, iz1 - 18, '#2a2d33'));
+        for (let k = 0; k < 6; k++) propGeos.push(cbox(0.34, 0.06, 6.5, b.x1 + 0.12, 0.6 + k * 0.65, iz1 - 18, '#3d424b'));
+        addSign(b, 'LOCKUP', PALETTE.neonCyan, 'e', 5.4, 5, iz1 - 18);
+        W.specials.chop = { x: b.x1 + 6, z: iz1 - 18, r: 5 };
+        continue;
+      }
+      if (isSpecial(i, j, 'gunshop')) {
+        info.type = 'gunshop';
+        const b = addBuilding(ix1 - 22, iz0 + 10, ix1, iz0 + 42, 9, 0, '#8d96a3');
+        neonBand(b, 8.6, 'orange');
+        addSign(b, 'IRON PALM ARMS', PALETTE.neonOrange, 'e', 6.4, 11);
+        addDoor('gunshop', b.x1, (b.z0 + b.z1) / 2, 'e', 'orange');
+        addBuilding(ix0, iz0, ix0 + 28, iz0 + 26, 12, 1, '#ffe5b4');
+        addBuilding(ix0, iz0 + 30, ix0 + 28, iz1, 10, 0, '#d8c8ff');
+        addBuilding(ix1 - 22, iz1 - 10, ix1, iz1, 8, 1, '#c6f1ff');
+        continue;
+      }
+      if (isSpecial(i, j, 'store')) {
+        info.type = 'store';
+        const b = addBuilding(ix0 + 12, iz0, ix0 + 40, iz0 + 24, 7, 0, '#f4f4f4');
+        neonBand(b, 6.7, 'cyan');
+        addSign(b, 'LATE MART 24/7', '#7dff7a', 'n', 5.2, 9);
+        addDoor('store', (b.x0 + b.x1) / 2, b.z0, 'n', 'cyan');
+        propGeos.push(cbox(b.x1 - b.x0 - 2, 0.12, 1.4, (b.x0 + b.x1) / 2, 3.6, b.z0 - 0.7, '#22c55e'));
+        addBuilding(ix0 + 44, iz0, ix1, iz0 + 26, 10, 1, '#b8f2e6');
+        addBuilding(ix0, iz0 + 30, ix0 + 26, iz1, 13, 0, '#ffd1dc');
+        addBuilding(ix0 + 30, iz0 + 30, ix1, iz1, 11, 1, '#fff1a8');
+        continue;
+      }
+      if (isSpecial(i, j, 'arcade')) {
+        info.type = 'arcade';
+        const b = addBuilding(ix1 - 26, iz0 + 14, ix1, iz1 - 14, 10, 1, '#6b4fa3');
+        neonBand(b, 9.6, 'pink');
+        neonBand(b, 6.2, 'cyan');
+        addSign(b, 'NEON ARCADE', PALETTE.neonPink, 'e', 8, 12);
+        addDoor('arcade', b.x1, (b.z0 + b.z1) / 2, 'e', 'pink');
+        addBuilding(ix0, iz0, ix0 + 26, iz0 + 26, 16, 0, '#ffc9a8');
+        addBuilding(ix0, iz0 + 30, ix0 + 26, iz1, 12, 1, '#c6f1ff');
+        addBuilding(ix1 - 26, iz0, ix1, iz0 + 10, 8, 0, '#ffd1dc');
+        addBuilding(ix1 - 26, iz1 - 10, ix1, iz1, 8, 1, '#e6f7c1');
         continue;
       }
 
@@ -453,7 +519,10 @@ export function buildWorld(scene, quality) {
   // east boulevard sidewalk palms (block column 6, east side)
   for (let j = 0; j < NB; j++) {
     const blk = blockBounds(NB - 1, j);
-    for (const t of [0.12, 0.5, 0.88]) palmSpots.push([blk.x1 - 2, CURB, blk.z0 + BLOCK * t, rng()]);
+    for (const t of [0.12, 0.5, 0.88]) {
+      if (t === 0.5 && isSpecial(NB - 1, j, 'arcade')) continue; // keep the arcade doorway clear
+      palmSpots.push([blk.x1 - 2, CURB, blk.z0 + BLOCK * t, rng()]);
+    }
   }
 
   // ------------------------------------------------ beach props

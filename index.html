@@ -16,19 +16,32 @@
   <div id="top-right">
     <div id="clock">17:36</div>
     <div id="money">$0</div>
+    <div id="money-pops" aria-live="polite"></div>
     <div id="stars" aria-label="Wanted level"></div>
     <div id="tokens">◆ 0/12</div>
+    <div id="weapon">
+      <div id="w-name">Fists</div>
+      <div id="w-ammo"></div>
+      <div id="w-slots"></div>
+    </div>
+    <div id="bag" hidden><span>BAG</span><b id="bag-val">$0</b></div>
   </div>
   <div id="objective" hidden></div>
   <div id="timer" hidden></div>
   <div id="notify"></div>
   <div id="radio"></div>
+  <div id="place"></div>
   <div id="prompt" hidden></div>
+  <div id="holdbar" hidden><span></span><div><i></i></div></div>
   <div id="subtitle" hidden></div>
   <div id="big"><div id="big-title"></div><div id="big-sub"></div></div>
+  <div id="crosshair" hidden><i></i><i></i><i></i><i></i><b></b></div>
+  <div id="hitmark"></div>
+  <div id="dmg-dir"></div>
   <div id="bottom-left">
     <canvas id="minimap" width="440" height="440"></canvas>
     <div class="bars">
+      <div id="armor" class="bar armor" hidden><i></i></div>
       <div id="hp" class="bar hp"><i></i></div>
       <div id="bust" class="bar bust" hidden><i></i></div>
     </div>
@@ -37,6 +50,7 @@
     <div id="veh-name"></div>
     <div id="speed"><b>0</b><span>km/h</span></div>
     <div id="veh-hp" class="bar"><i></i></div>
+    <div id="nitro" class="bar nitro" hidden><i></i></div>
   </div>
   <div id="damage"></div>
   <div id="fade"></div>
@@ -44,22 +58,49 @@
 
 <canvas id="bigmap" hidden></canvas>
 
+<div id="shop" hidden>
+  <div class="shop-panel" role="dialog" aria-modal="true" aria-labelledby="shop-title">
+    <header>
+      <div id="shop-kicker" class="kicker"></div>
+      <h2 id="shop-title"></h2>
+      <p id="shop-sub"></p>
+    </header>
+    <ul id="shop-list" role="listbox" aria-labelledby="shop-title"></ul>
+    <footer>
+      <span class="wallet">Cash <b id="shop-money">$0</b></span>
+      <span id="shop-msg" aria-live="polite"></span>
+      <span class="keys"><kbd>W</kbd><kbd>S</kbd> select <kbd>Enter</kbd> buy <kbd>Esc</kbd> close</span>
+      <button id="shop-close" type="button" class="ghost">Close</button>
+    </footer>
+  </div>
+</div>
+
+<div id="payout" hidden>
+  <div class="payout-panel" role="dialog" aria-modal="true" aria-labelledby="payout-title">
+    <div id="payout-kicker" class="kicker"></div>
+    <h2 id="payout-title"></h2>
+    <p id="payout-note"></p>
+    <dl id="payout-lines"></dl>
+    <div class="payout-total"><span>Your share</span><b id="payout-total"></b></div>
+    <button id="payout-ok" type="button">CONTINUE</button>
+  </div>
+</div>
+
 <div id="menu">
   <div class="menu-panel">
     <h1 class="logo"><span>NEON</span><span>TIDES</span></h1>
-    <p class="tag">Port Solano, after dark. Steal a ride, take Dex's jobs, outrun the precinct.</p>
+    <p class="tag">Port Solano, after dark. Steal a ride, buy your way up, and take down Solano Bank.</p>
     <button id="play" type="button">PLAY</button>
     <div class="controls" aria-label="Controls">
-      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Move / drive</span></div>
+      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Move / drive</span><kbd>Shift</kbd><span>Sprint / nitro</span></div>
       <div><kbd>Mouse</kbd><span>Look (right-drag if the cursor won't lock)</span></div>
-      <div><kbd>F</kbd><span>Enter, exit or steal a car</span></div>
-      <div><kbd>Space</kbd><span>Jump / handbrake</span></div>
-      <div><kbd>Shift</kbd><span>Sprint</span></div>
-      <div><kbd>Click</kbd><span>Punch</span></div>
-      <div><kbd>H</kbd><span>Horn</span><kbd>R</kbd><span>Radio</span></div>
+      <div><kbd>RMB</kbd><span>Aim</span><kbd>LMB</kbd><span>Fire / punch</span><kbd>R</kbd><span>Reload</span></div>
+      <div><kbd>1</kbd>–<kbd>5</kbd><span>Weapons</span><kbd>Q</kbd><span>or wheel to cycle</span></div>
+      <div><kbd>F</kbd><span>Cars, doors, shops (hold for some actions)</span></div>
+      <div><kbd>Space</kbd><span>Jump / handbrake</span><kbd>H</kbd><span>Horn</span><kbd>R</kbd><span>Radio in car</span></div>
       <div><kbd>M</kbd><span>Map</span><kbd>P</kbd><span>Pause</span><kbd>N</kbd><span>Mute</span></div>
     </div>
-    <p class="fine">Find the 12 hidden neon shells. Paint &amp; Pay clears your wanted level.</p>
+    <p class="fine">Shops, properties and Paint &amp; Pay Customs turn cash into power. Dex's last job is the bank.</p>
   </div>
 </div>
 
@@ -75,8 +116,9 @@
   <div id="stick"><div id="knob"></div></div>
   <div class="tbtns">
     <button id="t-enter" type="button">ENTER</button>
-    <button id="t-punch" type="button">PUNCH<small>BRAKE</small></button>
-    <button id="t-jump" type="button">JUMP</button>
+    <button id="t-punch" type="button">FIRE<small>BRAKE</small></button>
+    <button id="t-jump" type="button">JUMP<small>NITRO</small></button>
+    <button id="t-gun" type="button">GUN</button>
     <button id="t-map" type="button">MAP</button>
   </div>
 </div>

@@ -198,6 +198,11 @@ export function buildHuman(look, scale = 1) {
     torsoParts.push(cbox(0.28, 0.09, 0.29, 0, 0.99, -0.005, look.hair));
     torsoParts.push(cbox(0.28, 0.2, 0.06, 0, 0.88, -0.13, look.hair));
   }
+  if (look.hat) {
+    torsoParts.push(cbox(0.3, 0.11, 0.31, 0, 1.02, 0, look.hat));
+    torsoParts.push(cbox(0.28, 0.03, 0.14, 0, 0.97, 0.2, look.hat));
+  }
+  if (look.vest) torsoParts.push(cbox(0.54, 0.44, 0.32, 0, 0.36, 0, look.vest));
   if (look.shades) torsoParts.push(cbox(0.24, 0.06, 0.03, 0, 0.86, 0.14, '#0b0b0b'));
   else {
     torsoParts.push(cbox(0.04, 0.04, 0.02, 0.06, 0.86, 0.135, '#1b1b1b'));
@@ -243,6 +248,49 @@ export function animateHuman(m, phase, amount, punch = 0) {
     m.armR.rotation.z = -0.1;
     m.torso.rotation.y = -0.35 * k;
   } else m.torso.rotation.y = 0;
+}
+
+// ---------------------------------------------------------------- guns
+// Built with the barrel along +z, then mounted in the right hand so the barrel
+// follows the forearm. userData.len is the muzzle distance from the grip.
+const GUN_PARTS = {
+  pistol: [[0.07, 0.11, 0.3, 0, 0.03, 0.12, '#25272c'], [0.06, 0.16, 0.08, 0, -0.07, 0.02, '#1a1b1f']],
+  smg: [[0.08, 0.13, 0.46, 0, 0.03, 0.17, '#2a2d33'], [0.06, 0.2, 0.08, 0, -0.1, 0.12, '#17181b'], [0.06, 0.12, 0.08, 0, -0.06, -0.02, '#17181b']],
+  shotgun: [[0.08, 0.1, 0.82, 0, 0.03, 0.3, '#3b3026'], [0.07, 0.07, 0.5, 0, 0.08, 0.46, '#202125'], [0.07, 0.14, 0.24, 0, -0.04, -0.06, '#5b3f2a']],
+  rifle: [[0.08, 0.12, 0.78, 0, 0.03, 0.28, '#23262b'], [0.06, 0.2, 0.08, 0, -0.1, 0.22, '#15161a'], [0.07, 0.15, 0.24, 0, 0.0, -0.08, '#1d1f23'], [0.03, 0.06, 0.1, 0, 0.12, 0.3, '#15161a']],
+};
+const GUN_LEN = { pistol: 0.28, smg: 0.42, shotgun: 0.72, rifle: 0.68 };
+const gunGeoCache = new Map();
+export function buildGun(type) {
+  if (!gunGeoCache.has(type)) gunGeoCache.set(type, mergeGeometries(GUN_PARTS[type].map(([w, h, d, x, y, z, c]) => cbox(w, h, d, x, y, z, c))));
+  const m = new THREE.Mesh(gunGeoCache.get(type), MAT.vc);
+  m.rotation.x = Math.PI / 2;
+  m.position.set(0, -0.6, 0.05);
+  m.userData.len = GUN_LEN[type];
+  return m;
+}
+export const TWO_HANDED = { smg: true, shotgun: true, rifle: true };
+
+// Arms raised along the camera pitch (positive pitch = looking down).
+export function poseAim(m, pitch, twoHanded) {
+  m.armR.rotation.set(-Math.PI / 2 + pitch * 0.9, 0, 0);
+  if (twoHanded) m.armL.rotation.set(-Math.PI / 2 + pitch * 0.9 + 0.12, 0, -0.62);
+  else m.armL.rotation.set(-0.15, 0, 0.12);
+}
+export function poseHoldDown(m) {
+  m.armR.rotation.x = Math.min(m.armR.rotation.x, -0.25);
+}
+export function poseHandsUp(m) {
+  m.armL.rotation.set(-0.2, 0, 2.7);
+  m.armR.rotation.set(-0.2, 0, -2.7);
+}
+export function poseCower(m) {
+  m.hips.position.y = 0.5;
+  m.legL.rotation.x = -1.35;
+  m.legR.rotation.x = -1.35;
+  m.torso.rotation.x = 0.45;
+  m.armL.rotation.set(-2.2, 0, 1.2);
+  m.armR.rotation.set(-2.2, 0, -1.2);
 }
 
 // ---------------------------------------------------------------- helicopter

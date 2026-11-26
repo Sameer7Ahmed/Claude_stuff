@@ -33,6 +33,19 @@ export class Vehicle {
     this.smokeT = 0;
     this.lastImpact = 0;
     this._circles = [{ x: 0, z: 0 }, { x: 0, z: 0 }, { x: 0, z: 0 }];
+    // upgrades bought at Paint & Pay Customs
+    this.mods = { engine: 0, armor: 0, grip: 0, nitro: 0 };
+    this.nitro = 1;        // tank 0..1
+    this.nitroOn = false;
+    this.personal = false;
+  }
+
+  bulletHit(dmg, byPlayer) {
+    this.damage(dmg * 0.3);
+    if (!byPlayer) return;
+    this.playerTouched = this.G.time;
+    if (this.isPolice && this.driver === 'ai') this.G.wanted.attackCop(this.x, this.z);
+    else if (this.ai && this.ai.mode === 'traffic') this.ai.flee(14);
   }
 
   get speed() { return Math.hypot(this.vx, this.vz); }
@@ -55,7 +68,7 @@ export class Vehicle {
 
   damage(amount) {
     if (this.destroyed || amount <= 0) return;
-    this.health -= amount;
+    this.health -= amount * [1, 0.6, 0.35][this.mods.armor];
     if (this.health <= 0 && this.fireT <= 0) {
       this.health = 0;
       this.fireT = 5;
@@ -89,12 +102,18 @@ export class Vehicle {
     const dead = this.destroyed || this.health <= 0;
     this.steer = damp(this.steer, dead ? 0 : c.steer, 10, dt);
 
+    const md = this.mods;
+    const boosting = this.nitroOn && md.nitro && this.nitro > 0.02 && !dead && c.throttle > 0;
+    if (boosting) this.nitro = Math.max(0, this.nitro - dt / 3.2);
+    else if (md.nitro) this.nitro = Math.min(1, this.nitro + dt / 14);
+    this.boosting = boosting;
     if (this.onGround) {
       const thr = dead ? 0 : c.throttle;
-      const maxS = s.maxSpeed * (this.offroad ? 0.78 : 1);
+      const maxS = s.maxSpeed * (1 + md.engine * 0.1) * (boosting ? 1.28 : 1) * (this.offroad ? 0.78 : 1);
+      const acc = s.accel * (1 + md.engine * 0.18) + (boosting ? 16 : 0);
       if (thr > 0) {
         if (vF < -0.5) vF += s.brake * thr * dt;
-        else vF += s.accel * thr * Math.max(0, 1 - vF / maxS) * dt * (vF < 10 ? 1.25 : 1);
+        else vF += acc * thr * Math.max(0, 1 - vF / maxS) * dt * (vF < 10 ? 1.25 : 1);
       } else if (thr < 0) {
         if (vF > 0.5) vF += s.brake * thr * dt;
         else if (vF > -s.maxSpeed * 0.32) vF += s.accel * 0.65 * thr * dt;
@@ -103,7 +122,7 @@ export class Vehicle {
       }
       vF -= vF * (this.offroad ? 0.25 : 0.04) * dt;
       if (c.handbrake && !dead) vF -= Math.sign(vF) * Math.min(Math.abs(vF), 8 * dt);
-      const grip = (c.handbrake && !dead ? 1.4 : s.grip) * (this.offroad ? 0.7 : 1);
+      const grip = (c.handbrake && !dead ? 1.4 : s.grip * (1 + md.grip * 0.25)) * (this.offroad ? 0.7 : 1);
       this.slip = Math.abs(vR);
       vR *= Math.exp(-grip * dt);
       const sf = clamp(vF / 5, -1, 1);
@@ -206,6 +225,10 @@ export class Vehicle {
       fx.smoke(hx, this.y + 1.6, hz, 0.12, 1.4);
     } else if (this.health < 40 && !this.destroyed) {
       fx.smoke(hx, this.y + 1.0, hz, this.health < 20 ? 0.18 : 0.6, 0.8);
+    }
+    if (this.boosting) {
+      const bx = this.x - Math.sin(this.h) * (this.spec.L / 2 + 0.2), bz = this.z - Math.cos(this.h) * (this.spec.L / 2 + 0.2);
+      fx.nitro(bx, this.y + this.spec.wheelR * 0.9, bz);
     }
     if (this.onGround && !this.destroyed) {
       const sp = this.speed;

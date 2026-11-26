@@ -196,6 +196,15 @@ export class Environment {
     this.hemi.color.set(night > 0.5 ? '#6f7cc8' : '#cfe3ff');
     this.hemi.groundColor.set(night > 0.5 ? '#3a2a4a' : '#8a7a5e');
 
+    // indoors: no sun or fog, a fixed ambient set by the interior
+    if (this.indoor) {
+      this.sun.intensity = 0;
+      this.hemi.intensity = this.indoor.intensity;
+      this.hemi.color.set(this.indoor.color);
+      this.hemi.groundColor.set('#3a3440');
+      this.scene.fog.far = 2000;
+    }
+
     // shadow camera follows the player, snapped to texels to avoid shimmering
     const step = 150 / this.sun.shadow.mapSize.x;
     const fx = Math.round(focus.x / step) * step, fz = Math.round(focus.z / step) * step;

@@ -15,6 +15,14 @@ export class DriverAI {
     this.impatientT = 0;
     this.direct = false;
     this.honkT = 0;
+    this.fleeT = 0;
+  }
+
+  // panic: drive away from the player for a while, then rejoin traffic
+  flee(t) {
+    if (this.mode === 'chase' || this.mode === 'stop') return;
+    if (this.mode !== 'flee') { this.mode = 'flee'; this.resync(); }
+    this.fleeT = Math.max(this.fleeT, t);
   }
 
   // Put the vehicle on the lane of a road segment.
@@ -67,7 +75,7 @@ export class DriverAI {
     const W = this.G.world;
     const n = W.nodes[node];
     if (this.mode === 'chase') {
-      const P = this.G.player.pos;
+      const P = this.G.player.outdoorPos;
       let best = null, bd = Infinity;
       for (const m of n.nb) {
         const o = W.nodes[m];
@@ -77,7 +85,7 @@ export class DriverAI {
       return best;
     }
     if (this.mode === 'flee') {
-      const P = this.G.player.pos;
+      const P = this.G.player.outdoorPos;
       let best = null, bd = -Infinity;
       for (const m of n.nb) {
         if (m === prev) continue;
@@ -102,17 +110,21 @@ export class DriverAI {
 
   update(dt) {
     const v = this.v;
-    if (v.destroyed || v.health <= 0) { v.ctrl.throttle = 0; v.ctrl.steer = 0; v.ctrl.handbrake = true; return; }
+    if (v.destroyed || v.health <= 0 || this.mode === 'stop') { v.ctrl.throttle = 0; v.ctrl.steer = 0; v.ctrl.handbrake = true; return; }
+    if (this.mode === 'flee') {
+      this.fleeT -= dt;
+      if (this.fleeT <= 0) { this.mode = 'traffic'; this.resync(); }
+    }
     const G = this.G, W = G.world;
     const fx = Math.sin(v.h), fz = Math.cos(v.h);
     const vF = v.fwdSpeed;
     let tx, tz, desired;
 
-    const P = G.player.pos;
+    const P = G.player.outdoorPos;
     const pdx = P.x - v.x, pdz = P.z - v.z;
     const pdist = Math.hypot(pdx, pdz);
     const chasing = this.mode === 'chase';
-    const wantDirect = chasing && pdist < 45 && !W.colliders.lineBlocked(v.x, v.z, P.x, P.z, 4);
+    const wantDirect = chasing && G.player.space === W && pdist < 45 && !W.colliders.lineBlocked(v.x, v.z, P.x, P.z, 4);
 
     if (wantDirect) {
       this.direct = true;
@@ -212,7 +224,8 @@ export class DriverAI {
       lim = Math.min(lim, Math.max(0, (ahead - 4) * 0.8));
     };
     for (const p of G.peds) if (p.active && p.state !== 'down') checkHuman(p.x, p.z);
-    if (!G.player.vehicle) checkHuman(G.player.x, G.player.z);
+    if (!G.player.vehicle && G.player.space === G.world) checkHuman(G.player.x, G.player.z);
+    for (const n of G.npcs) if (n.space === G.world && !n.dead) checkHuman(n.x, n.z);
     return lim;
   }
 }

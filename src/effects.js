@@ -80,13 +80,102 @@ class Particles {
   }
 }
 
+// Bullet tracers: one instanced unit box stretched between muzzle and impact.
+class Tracers {
+  constructor(scene, max = 40) {
+    this.max = max;
+    const geo = new THREE.BoxGeometry(1, 1, 1).translate(0, 0, 0.5);
+    const mat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    this.mesh = new THREE.InstancedMesh(geo, mat, max);
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 6;
+    this.life = new Float32Array(max);
+    this.cols = Array.from({ length: max }, () => new THREE.Color());
+    this.idx = 0;
+    const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+    for (let i = 0; i < max; i++) { this.mesh.setMatrixAt(i, zero); this.mesh.setColorAt(i, new THREE.Color(0, 0, 0)); }
+    scene.add(this.mesh);
+    this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._p = new THREE.Vector3();
+    this._s = new THREE.Vector3(); this._d = new THREE.Vector3(); this._z = new THREE.Vector3(0, 0, 1);
+    this._black = new THREE.Color(0, 0, 0);
+  }
+  add(ax, ay, az, bx, by, bz, color) {
+    const i = this.idx;
+    this.idx = (this.idx + 1) % this.max;
+    this._d.set(bx - ax, by - ay, bz - az);
+    const len = this._d.length();
+    if (len < 0.01) return;
+    this._q.setFromUnitVectors(this._z, this._d.multiplyScalar(1 / len));
+    this._m.compose(this._p.set(ax, ay, az), this._q, this._s.set(0.035, 0.035, len));
+    this.mesh.setMatrixAt(i, this._m);
+    this.cols[i].set(color);
+    this.mesh.setColorAt(i, this.cols[i]);
+    this.life[i] = 0.07;
+    this.mesh.instanceMatrix.needsUpdate = true;
+    this.mesh.instanceColor.needsUpdate = true;
+  }
+  update(dt) {
+    let dirty = false;
+    for (let i = 0; i < this.max; i++) {
+      if (this.life[i] <= 0) continue;
+      this.life[i] -= dt;
+      const k = Math.max(0, this.life[i] / 0.07);
+      this.mesh.setColorAt(i, this._black.copy(this.cols[i]).multiplyScalar(k));
+      dirty = true;
+    }
+    if (dirty) this.mesh.instanceColor.needsUpdate = true;
+  }
+}
+
 export class Effects {
   constructor(scene) {
     this.normal = new Particles(scene, 700, THREE.NormalBlending);
     this.glow = new Particles(scene, 500, THREE.AdditiveBlending);
     this.flash = new THREE.PointLight('#ff9a4a', 0, 60, 1.5);
     scene.add(this.flash);
+    this.muzzleLight = new THREE.PointLight('#ffc070', 0, 14, 1.6);
+    scene.add(this.muzzleLight);
+    this.tracers = new Tracers(scene);
     this.c = new THREE.Color();
+  }
+  tracer(ax, ay, az, bx, by, bz, color = 0xffe2a0) { this.tracers.add(ax, ay, az, bx, by, bz, color); }
+  muzzle(x, y, z, suppressed = false, light = true) {
+    this.c.setRGB(1, 0.8, 0.4);
+    const n = suppressed ? 1 : 3;
+    for (let i = 0; i < n; i++) this.glow.emit(x, y, z, rand(-0.5, 0.5), rand(-0.2, 0.6), rand(-0.5, 0.5), 0.05, suppressed ? 0.25 : 0.6, 0.1, this.c, 1, 0);
+    if (light && !suppressed) {
+      this.muzzleLight.position.set(x, y, z);
+      this.muzzleLight.intensity = 30;
+    }
+  }
+  shell(x, y, z) {
+    this.c.set('#d4a24a');
+    this.normal.emit(x, y, z, rand(0.8, 1.6), rand(1.5, 2.5), rand(-0.8, 0.8), 0.55, 0.12, 0.1, this.c, 1, -14);
+  }
+  impact(x, y, z, kind = 'wall') {
+    if (kind === 'metal') {
+      this.c.setRGB(1, 0.75, 0.35);
+      for (let i = 0; i < 6; i++) this.glow.emit(x, y, z, rand(-3, 3), rand(0.5, 4), rand(-3, 3), rand(0.15, 0.3), 0.18, 0.04, this.c, 1, -14);
+    } else {
+      this.c.set(kind === 'dust' ? '#cdbb94' : '#b8b2a8');
+      for (let i = 0; i < 3; i++) this.normal.emit(x, y, z, rand(-0.6, 0.6), rand(0.4, 1.4), rand(-0.6, 0.6), rand(0.35, 0.6), 0.25, 0.9, this.c, 0.6, -1);
+      this.c.setRGB(1, 0.85, 0.5);
+      this.glow.emit(x, y, z, 0, 0, 0, 0.05, 0.3, 0.05, this.c, 0.8, 0);
+    }
+  }
+  // brief fabric-coloured puff when a person is hit (kept deliberately non-graphic)
+  puff(x, y, z) {
+    this.c.set('#8a3b3b');
+    for (let i = 0; i < 3; i++) this.normal.emit(x, y, z, rand(-0.5, 0.5), rand(0, 0.8), rand(-0.5, 0.5), 0.25, 0.2, 0.45, this.c, 0.55, -2);
+  }
+  nitro(x, y, z) {
+    this.c.setRGB(0.35, 0.6, 1);
+    this.glow.emit(x + rand(-0.1, 0.1), y, z + rand(-0.1, 0.1), rand(-0.3, 0.3), rand(0, 0.3), rand(-0.3, 0.3), 0.12, 0.7, 0.15, this.c, 1, 0);
+  }
+  drillSparks(x, y, z) {
+    this.c.setRGB(1, 0.7, 0.3);
+    for (let i = 0; i < 3; i++) this.glow.emit(x, y, z, rand(-2.5, 2.5), rand(0.5, 3), rand(0.5, 3), rand(0.2, 0.4), 0.15, 0.03, this.c, 1, -12);
   }
   setScale(height, fov) {
     const s = height / (2 * Math.tan((fov * Math.PI) / 360));
@@ -134,6 +223,8 @@ export class Effects {
   update(dt) {
     this.normal.update(dt);
     this.glow.update(dt);
+    this.tracers.update(dt);
     if (this.flash.intensity > 0) this.flash.intensity = Math.max(0, this.flash.intensity - dt * 9000);
+    if (this.muzzleLight.intensity > 0) this.muzzleLight.intensity = Math.max(0, this.muzzleLight.intensity - dt * 600);
   }
 }

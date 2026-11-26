@@ -7,6 +7,10 @@ const tokenGeo = new THREE.OctahedronGeometry(0.55, 0);
 const tokenMat = new THREE.MeshBasicMaterial({ color: '#5ff6ff' });
 const heartGeo = new THREE.BoxGeometry(0.9, 0.3, 0.3);
 const heartMat = new THREE.MeshStandardMaterial({ color: '#ff3b5c', emissive: '#a0102a', emissiveIntensity: 0.7 });
+const ammoGeo = new THREE.BoxGeometry(0.55, 0.32, 0.36);
+const ammoMat = new THREE.MeshStandardMaterial({ color: '#a16207', emissive: '#5a3500', emissiveIntensity: 0.6, roughness: 0.6 });
+const cardGeo = new THREE.BoxGeometry(0.5, 0.04, 0.32);
+const cardMat = new THREE.MeshBasicMaterial({ color: '#4dd2ff' });
 
 export class Pickups {
   constructor(G) {
@@ -15,23 +19,38 @@ export class Pickups {
     this.t = 0;
   }
 
-  add(type, x, z, data = {}) {
+  // space: an Interior, or null for the outdoor world
+  add(type, x, z, data = {}, space = null) {
     const G = this.G;
     let mesh;
     if (type === 'cash') mesh = new THREE.Mesh(cashGeo, cashMat);
     else if (type === 'token') mesh = new THREE.Mesh(tokenGeo, tokenMat);
+    else if (type === 'ammo') mesh = new THREE.Mesh(ammoGeo, ammoMat);
+    else if (type === 'keycard') mesh = new THREE.Mesh(cardGeo, cardMat);
     else {
       mesh = new THREE.Group();
       const a = new THREE.Mesh(heartGeo, heartMat), b = new THREE.Mesh(heartGeo, heartMat);
       b.rotation.z = Math.PI / 2;
       mesh.add(a, b);
     }
-    const y = G.world.groundY(x, z) + 0.9;
+    const y = (space ? space.floorY : G.world.groundY(x, z)) + 0.9;
     mesh.position.set(x, y, z);
-    G.scene.add(mesh);
-    const it = { type, x, z, y, mesh, ...data, life: type === 'cash' ? 40 : Infinity, respawn: 0 };
+    (space ? space.group : G.scene).add(mesh);
+    const life = type === 'cash' || type === 'ammo' ? 45 : Infinity;
+    const it = { type, x, z, y, mesh, ...data, space, life, respawn: 0 };
     this.items.push(it);
     return it;
+  }
+
+  remove(it) {
+    it.mesh.parent?.remove(it.mesh);
+    const i = this.items.indexOf(it);
+    if (i >= 0) this.items.splice(i, 1);
+  }
+
+  // drop interior items when leaving a space
+  clearSpace(space) {
+    for (const it of [...this.items]) if (it.space === space && it.type !== 'keycard') this.remove(it);
   }
 
   spawnCash(x, z, amount) { this.add('cash', x, z, { amount }); }
@@ -49,17 +68,26 @@ export class Pickups {
         continue;
       }
       it.life -= dt;
-      if (it.life <= 0) { G.scene.remove(it.mesh); this.items.splice(i, 1); continue; }
+      if (it.life <= 0) { this.remove(it); continue; }
       it.mesh.rotation.y += dt * 2.2;
       it.mesh.position.y = it.y + Math.sin(this.t * 3 + it.x) * 0.15;
+      if ((it.space || G.world) !== G.player.space) continue;
       const d = Math.hypot(P.x - it.x, P.z - it.z);
       if (d > (inCar ? 3.2 : 1.5) || Math.abs(P.y + 0.9 - it.y) > 2.5 || !G.player.alive) continue;
       if (it.type === 'cash') {
         G.addMoney(it.amount);
         G.audio.cash();
         G.effects.sparkle(it.x, it.y, it.z, '#3ddc84', 10);
-        G.scene.remove(it.mesh);
-        this.items.splice(i, 1);
+        this.remove(it);
+      } else if (it.type === 'ammo') {
+        const A = G.arsenal;
+        if (A.has(it.weapon)) { A.addAmmo(it.weapon, it.rounds); G.notify(`+${it.rounds} rounds`, 1.2); }
+        else { A.give(it.weapon, it.rounds); G.notify(`Picked up a ${G.weaponName(it.weapon)}`, 2); }
+        G.audio.equip();
+        this.remove(it);
+      } else if (it.type === 'keycard') {
+        G.heist.pickKeycard();
+        this.remove(it);
       } else if (it.type === 'health') {
         if (G.player.health >= 100) continue;
         G.player.health = 100;
@@ -72,8 +100,7 @@ export class Pickups {
         G.collectToken(it.id);
         G.audio.token();
         G.effects.sparkle(it.x, it.y, it.z, '#5ff6ff', 24);
-        G.scene.remove(it.mesh);
-        this.items.splice(i, 1);
+        this.remove(it);
       }
     }
   }

@@ -16,6 +16,8 @@ export const LAND = { minX: -HALF - 50, maxX: HALF + 120, minZ: -HALF - 50, maxZ
 // Wooden pier that sticks out into the ocean from the beach.
 export const PIER = { minX: LAND.maxX - 6, maxX: LAND.maxX + 70, minZ: -5, maxZ: 5, y: 0.4 };
 export const WATER_Y = -0.6;
+// Interiors are enclosed rooms built underneath their buildings at this height.
+export const INTERIOR_Y = -60;
 
 export const roadPos = (k) => k * PITCH - HALF;
 
@@ -33,6 +35,9 @@ export const SPECIAL = {
   bank: [3, 3],
   motel: [6, 5],
   marina: [6, 1],
+  gunshop: [1, 4],
+  store: [4, 6],
+  arcade: [6, 3],
   parks: [[2, 4], [5, 1]],
   parking: [[3, 5], [5, 3]],
 };

@@ -9,7 +9,11 @@ export class Input {
     this.locked = false;
     this.dragging = false;
     this.isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
-    this.touch = { x: 0, y: 0, enter: false, punch: false, jump: false, brake: false, sprint: false, map: false, lookDX: 0, lookDY: 0 };
+    this.lmb = false;
+    this.rmb = false;
+    this.wheel = 0;
+    this.touch = { x: 0, y: 0, enter: false, enterHeld: false, punch: false, fire: false, jump: false, brake: false, sprint: false, map: false, gun: false, lookDX: 0, lookDY: 0 };
+    canvas.addEventListener('wheel', (e) => { this.wheel += Math.sign(e.deltaY); e.preventDefault(); }, { passive: false });
 
     window.addEventListener('keydown', (e) => {
       if (!this.keys.has(e.code)) this.pressed.add(e.code);
@@ -18,11 +22,19 @@ export class Input {
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
+    this.wantLock = false;   // set once the game starts
+    this.lockFailed = false; // browsers/frames without pointer lock: clicks act normally
+    document.addEventListener('pointerlockerror', () => { this.lockFailed = true; });
     canvas.addEventListener('mousedown', (e) => {
-      if (e.button === 0) this.clicked = true;
-      if (e.button === 2 || !this.locked) this.dragging = e.button === 2;
+      // the first click on an unlocked canvas only captures the mouse (so it can't fire a gun)
+      if (e.button === 0 && this.wantLock && !this.locked && !this.lockFailed && !this.isTouch) { this.requestLock(); return; }
+      if (e.button === 0) { this.clicked = true; this.lmb = true; }
+      if (e.button === 2) { this.rmb = true; this.dragging = true; }
     });
-    window.addEventListener('mouseup', (e) => { if (e.button === 2) this.dragging = false; });
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this.lmb = false;
+      if (e.button === 2) { this.rmb = false; this.dragging = false; }
+    });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('mousemove', (e) => {
       if (this.locked || this.dragging) { this.mouseDX += e.movementX; this.mouseDY += e.movementY; }
@@ -33,13 +45,35 @@ export class Input {
   requestLock() {
     if (this.isTouch) return;
     try {
-      const p = this.canvas.requestPointerLock?.();
-      if (p && p.catch) p.catch(() => {});
-    } catch { /* pointer lock unavailable: right-drag still works */ }
+      if (!this.canvas.requestPointerLock) { this.lockFailed = true; return; }
+      const p = this.canvas.requestPointerLock();
+      if (p && p.catch) p.catch(() => { this.lockFailed = true; });
+    } catch { this.lockFailed = true; /* pointer lock unavailable: right-drag still works */ }
+  }
+
+  // free the cursor for menus
+  release() {
+    try { if (document.pointerLockElement) document.exitPointerLock(); } catch { /* ignore */ }
+    this.reset();
+  }
+  // forget held buttons so nothing carries over after a menu closes
+  reset() {
+    this.keys.clear();
+    this.pressed.clear();
+    this.lmb = this.rmb = this.dragging = false;
+    this.clicked = false;
+    this.mouseDX = this.mouseDY = 0;
+    this.wheel = 0;
   }
 
   down(code) { return this.keys.has(code); }
   hit(code) { return this.pressed.has(code); }
+  // mark a press as handled so a second system doesn't also act on it this frame
+  consume(code = 'KeyF') { this.pressed.delete(code); if (code === 'KeyF') this.touch.enter = false; }
+  aimHeld() { return this.rmb || this.touch.fire; }
+  fireHeld() { return this.lmb || this.touch.fire; }
+  firePressed() { return this.clicked || this.touch.punch; }
+  interactHeld() { return this.down('KeyF') || this.touch.enterHeld; }
   axisX() {
     return (this.down('KeyD') || this.down('ArrowRight') ? 1 : 0) - (this.down('KeyA') || this.down('ArrowLeft') ? 1 : 0) + this.touch.x;
   }
@@ -53,8 +87,9 @@ export class Input {
     this.pressed.clear();
     this.mouseDX = this.mouseDY = 0;
     this.clicked = false;
+    this.wheel = 0;
     const t = this.touch;
-    t.enter = t.punch = t.jump = t.map = false;
+    t.enter = t.punch = t.jump = t.map = t.gun = false;
     t.lookDX = t.lookDY = 0;
   }
 
@@ -120,9 +155,10 @@ export class Input {
       el.addEventListener('touchstart', (e) => { e.preventDefault(); onDown(); el.classList.add('on'); }, { passive: false });
       el.addEventListener('touchend', (e) => { e.preventDefault(); onUp?.(); el.classList.remove('on'); }, { passive: false });
     };
-    btn('#t-enter', () => { this.touch.enter = true; });
-    btn('#t-punch', () => { this.touch.punch = true; this.touch.brake = true; }, () => { this.touch.brake = false; });
-    btn('#t-jump', () => { this.touch.jump = true; });
+    btn('#t-enter', () => { this.touch.enter = true; this.touch.enterHeld = true; }, () => { this.touch.enterHeld = false; });
+    btn('#t-punch', () => { this.touch.punch = true; this.touch.fire = true; this.touch.brake = true; }, () => { this.touch.fire = false; this.touch.brake = false; });
+    btn('#t-jump', () => { this.touch.jump = true; this.touch.sprint = true; }, () => { this.touch.sprint = false; });
+    btn('#t-gun', () => { this.touch.gun = true; });
     btn('#t-map', () => { this.touch.map = true; });
   }
 }

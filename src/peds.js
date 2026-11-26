@@ -1,4 +1,4 @@
-import { buildHuman, randomLook, animateHuman } from './models.js';
+import { buildHuman, randomLook, animateHuman, poseCower } from './models.js';
 import { blockBounds, NB } from './config.js';
 import { clamp, rand, randi, dampAngle, pick } from './util.js';
 
@@ -34,6 +34,37 @@ export class Ped {
     this.i = 0; this.j = 0; this.k = 0; this.dir = 1;
     this.tx = 0; this.tz = 0;
     this.crossing = false;
+    this.hp = 100;
+    this.out = false;
+  }
+
+  get hittable() { return this.model.root.visible; }
+
+  // gunshot: returns true when this hit knocked them out
+  shot(dmg, fromX, fromZ, byPlayer) {
+    const G = this.G;
+    if (this.out) return false;
+    this.hp -= dmg;
+    const dx = this.x - fromX, dz = this.z - fromZ, l = Math.hypot(dx, dz) || 1;
+    if (this.hp <= 0) {
+      this.out = true;
+      this.knock((dx / l) * 2, (dz / l) * 2, 1.2, false);
+      this.timer = 30;
+      if (byPlayer) {
+        G.wanted.crime(0.6, this.x, this.z);
+        if (Math.random() < 0.5) G.pickups.spawnCash(this.x + rand(-0.5, 0.5), this.z + rand(-0.5, 0.5), randi(10, 60));
+      }
+      return true;
+    }
+    if (byPlayer) G.wanted.crime(0.3, this.x, this.z);
+    if (this.state !== 'down') this.flee(fromX, fromZ);
+    return false;
+  }
+
+  cower(t) {
+    if (this.state === 'down') return;
+    this.state = 'cower';
+    this.timer = t;
   }
 
   spawnAt(i, j) {
@@ -49,6 +80,8 @@ export class Ped {
     this.state = 'walk';
     this.lie = 0;
     this.crossing = false;
+    this.hp = 100;
+    this.out = false;
     this.vx = this.vz = this.vy = 0;
     this.y = this.G.world.groundY(this.x, this.z);
     this.model.root.rotation.set(0, 0, 0);
@@ -147,8 +180,13 @@ export class Ped {
       if (this.timer <= 0) {
         this.lie = 0;
         m.root.rotation.x = 0;
+        if (this.out) { respawnPed(G, this); return; }
         this.flee(G.player.x, G.player.z);
       }
+    } else if (this.state === 'cower') {
+      this.vx = this.vz = 0;
+      this.timer -= dt;
+      if (this.timer <= 0) this.flee(G.player.x, G.player.z, rand(3, 6));
     }
 
     const nx = this.x + this.vx * dt, nz = this.z + this.vz * dt;
@@ -185,13 +223,16 @@ export class Ped {
       m.root.rotation.x = -Math.PI / 2 * this.lie;
       m.root.position.y = this.y + 0.15 * this.lie;
       animateHuman(m, 0, 0);
+    } else if (this.state === 'cower') {
+      animateHuman(m, 0, 0);
+      poseCower(m);
     } else animateHuman(m, this.phase, moving);
   }
 }
 
 // Pool management: keep a population of pedestrians around the player.
 export function updatePeds(G, dt) {
-  const P = G.player.pos;
+  const P = G.player.outdoorPos;
   for (const p of G.peds) {
     const d = Math.hypot(p.x - P.x, p.z - P.z);
     if (d > 150) { respawnPed(G, p); continue; }
@@ -201,7 +242,7 @@ export function updatePeds(G, dt) {
 }
 
 export function respawnPed(G, p, near = false) {
-  const P = G.player.pos;
+  const P = G.player.outdoorPos;
   const fx = Math.sin(G.cam.yaw), fz = Math.cos(G.cam.yaw);
   for (let tries = 0; tries < 12; tries++) {
     const i = randi(0, NB - 1), j = randi(0, NB - 1);
@@ -244,8 +285,21 @@ export function carVsHumans(G) {
         break;
       }
     }
+    // cops and other armed NPCs on the street can be run down too
+    for (const n of G.npcs) {
+      if (n.space !== G.world || n.dead || sp < 4) continue;
+      const dx0 = n.x - v.x, dz0 = n.z - v.z;
+      if (dx0 * dx0 + dz0 * dz0 > 16) continue;
+      for (const c of cs) {
+        const dx = n.x - c.x, dz = n.z - c.z, d = Math.hypot(dx, dz), rr = v.r + 0.35;
+        if (d >= rr) continue;
+        n.x += (dx / (d || 1)) * (rr - d); n.z += (dz / (d || 1)) * (rr - d);
+        n.damage(sp * 3.2, v.x, v.z, v.driver === 'player');
+        break;
+      }
+    }
     const pl = G.player;
-    if (!pl.vehicle && pl.alive && sp > 0.5) {
+    if (!pl.vehicle && pl.alive && sp > 0.5 && pl.space === G.world) {
       const dx0 = pl.x - v.x, dz0 = pl.z - v.z;
       if (dx0 * dx0 + dz0 * dz0 < 16 && Math.abs(pl.y - v.y) < 1.5) {
         for (const c of cs) {

@@ -1,23 +1,19 @@
 import { Marker } from './pickups.js';
-import { HALF, ROAD, LAND, PIER } from './config.js';
+import { HALF, ROAD } from './config.js';
 
-// Step factories. Each returns {text, start?, update(G, M, dt) -> true when done}.
+// Step factories. Each returns {text, start?, update(G, M) -> true when done, target?}.
 const say = (lines) => ({ type: 'say', lines });
-const getCar = (text = 'Get a vehicle.') => ({
-  text,
-  update: (G) => !!G.player.vehicle,
-  target: () => null,
-});
+const act = (fn) => ({ type: 'act', fn });
+const timer = (seconds) => ({ type: 'timer', seconds, update: () => true });
+const getCar = (text = 'Get a vehicle.') => ({ text, update: (G) => !!G.player.vehicle });
 const goTo = (where, text, { car = false, radius = 5, onArrive } = {}) => ({
   text,
-  car,
-  where,
   start(G, M) { const p = where(G); M.marker.radius = radius; M.marker.show(p.x, p.z); },
   update(G, M) {
     if (car && !G.player.vehicle) { M.sub = 'Get back in a vehicle.'; return false; }
     M.sub = '';
     const P = G.player.pos;
-    if (M.marker.inside(P.x, P.z, car ? 1.5 : 0)) {
+    if (G.player.space === G.world && M.marker.inside(P.x, P.z, car ? 1.5 : 0)) {
       if (car && G.player.vehicle.speed > 14) { M.sub = 'Slow down to stop in the marker.'; return false; }
       M.marker.hide();
       onArrive?.(G, M);
@@ -25,19 +21,20 @@ const goTo = (where, text, { car = false, radius = 5, onArrive } = {}) => ({
     }
     return false;
   },
-  target: (G) => where(G),
 });
-const timer = (seconds) => ({ type: 'timer', seconds, update: () => true, target: () => null });
-const getWanted = (n, text) => ({
+// walk through a building's door
+const enter = (id, text) => ({
   text,
-  update: (G) => G.wanted.stars >= n,
-  target: () => null,
+  start(G, M) { const d = G.world.doors[id]; M.marker.radius = 2.2; M.marker.show(d.x, d.z); },
+  update(G, M) {
+    if (G.player.space.id === id) { M.marker.hide(); return true; }
+    if (!M.marker.visible && G.player.space === G.world) { const d = G.world.doors[id]; M.marker.show(d.x, d.z); }
+    return false;
+  },
 });
-const loseWanted = (text) => ({
-  text,
-  update: (G) => G.wanted.stars === 0,
-  target: () => null,
-});
+const check = (fn, text, sub) => ({ text, update: (G, M) => { M.sub = sub ? sub(G) : ''; return fn(G); } });
+const getWanted = (n, text) => check((G) => G.wanted.stars >= n, text);
+const loseWanted = (text) => check((G) => G.wanted.stars === 0, text);
 const checkpoints = (points, text) => ({
   text,
   idx: 0,
@@ -55,18 +52,37 @@ const checkpoints = (points, text) => ({
     }
     return false;
   },
-  target: () => { const p = points[Math.min(points.length - 1, 0)]; return { x: p[0], z: p[1] }; },
+});
+const range = (n, text) => ({
+  text,
+  update(G, M) {
+    const R = G.interiors.list.gunshop.range;
+    if (R.active) { M.sub = `Hits: ${R.hits} / ${n}`; return R.hits >= n; }
+    M.sub = R.runs ? `Last run: ${R.last} hits. Press F at the booth to try again.` : 'Press F at the shooting booth behind the counter.';
+    return R.last >= n && R.runs > 0;
+  },
+});
+const heistStep = () => ({
+  text: '',
+  start(G) { this.base = G.heist.successes; },
+  update(G, M) {
+    const H = G.heist;
+    if (H.successes > this.base) return true;
+    if (H.phase === 'cooldown') M.sub = H.statusLine();
+    else M.sub = '';
+    this.text = H.running ? H.objective : G.player.space.id === 'bank' ? 'Draw a weapon (right mouse) and take control of the bank.' : 'Go inside Solano Bank.';
+    return false;
+  },
 });
 
 const BEACH_X = HALF + ROAD / 2;
 
 export function missionList(W) {
   const S = W.specials;
+  const motel = () => ({ x: S.motel.x, z: S.motel.z });
   return [
     {
-      title: 'Fresh Coat',
-      reward: 500,
-      contact: () => ({ x: S.motel.x, z: S.motel.z }),
+      title: 'Fresh Coat', reward: 500, contact: motel,
       steps: [
         say([
           'DEX: You must be the new driver. Welcome to Port Solano.',
@@ -78,9 +94,7 @@ export function missionList(W) {
       ],
     },
     {
-      title: 'Cold Delivery',
-      reward: 900,
-      contact: () => ({ x: S.motel.x, z: S.motel.z }),
+      title: 'Cold Delivery', reward: 900, contact: motel,
       steps: [
         say([
           'DEX: Good. Now a delivery job.',
@@ -94,9 +108,7 @@ export function missionList(W) {
       ],
     },
     {
-      title: 'Coastline Sprint',
-      reward: 1400,
-      contact: () => ({ x: S.motel.x, z: S.motel.z }),
+      title: 'Coastline Sprint', reward: 1400, contact: motel,
       steps: [
         say([
           'DEX: A buddy of mine says nobody beats his time on the beach run.',
@@ -113,9 +125,21 @@ export function missionList(W) {
       ],
     },
     {
-      title: 'Turn Up the Heat',
-      reward: 1800,
-      contact: () => ({ x: S.motel.x, z: S.motel.z }),
+      title: 'Iron Lesson', reward: 1500, contact: motel,
+      steps: [
+        say([
+          'DEX: The jobs get heavier from here. You need to handle a piece.',
+          'DEX: Here is five hundred. Iron Palm Arms on the west side sells pistols.',
+          'DEX: They have a range out back. Show me you can hit something.',
+        ]),
+        act((G) => G.addMoney(500)),
+        enter('gunshop', 'Go to Iron Palm Arms.'),
+        check((G) => G.arsenal.owned.size > 1, 'Buy a gun at the counter (F), then press 2 to draw it.'),
+        range(8, 'Hit 8 targets in one range run (right mouse aims, left mouse fires).'),
+      ],
+    },
+    {
+      title: 'Turn Up the Heat', reward: 1800, contact: motel,
       steps: [
         say([
           'DEX: The precinct thinks it owns these streets.',
@@ -127,26 +151,18 @@ export function missionList(W) {
       ],
     },
     {
-      title: 'Last Call at Solano Bank',
-      reward: 10000,
-      contact: () => ({ x: S.motel.x, z: S.motel.z }),
+      title: 'The Solano Job', reward: 0, contact: motel,
+      outro: 'Dex: "Pleasure doing business. The bank will reopen, if you ever want seconds."',
       steps: [
         say([
-          'DEX: Last job, and it is the big one.',
-          'DEX: My contact left the side door at Solano Bank unlocked.',
-          'DEX: Grab the bag, then get to the boat at the end of the pier. Every cop in town will be on you.',
+          'DEX: This is the big one. Solano Bank, downtown.',
+          'DEX: Get the keycard off the manager or a guard, swipe through the staff gate, and drill the vault.',
+          'DEX: The drill takes time and makes noise, so the cops will come in force. Wear armor.',
+          'DEX: Bag what you can, then make for the boat at the pier, or lose them and bring it to my lockup. I take twenty percent.',
         ]),
-        goTo(() => S.bank, 'Go to Solano Bank downtown.', {
-          radius: 4,
-          onArrive: (G) => {
-            G.wanted.setStars(4);
-            G.notify('You have the bag. Run!', 2.5);
-          },
-        }),
-        goTo(() => S.boat, 'Reach the getaway boat at the end of the pier.', {
-          radius: 4,
-          onArrive: (G) => G.wanted.clear(),
-        }),
+        check((G) => G.arsenal.drills > 0 || G.heist.running, 'Buy a thermal drill at Iron Palm Arms.', (G) => (G.wanted.stars ? 'Lose the cops first; shops won\'t serve you.' : '')),
+        enter('bank', 'Go inside Solano Bank.'),
+        heistStep(),
       ],
     },
   ];
@@ -184,6 +200,7 @@ export class Missions {
 
   advance() {
     const A = this.active;
+    if (!A) return;
     A.step++;
     const s = A.m.steps[A.step];
     if (!s) { this.pass(); return; }
@@ -192,11 +209,8 @@ export class Missions {
       this.G.hud.objective('');
       return;
     }
-    if (s.type === 'timer') {
-      this.timeLeft = s.seconds;
-      this.advance();
-      return;
-    }
+    if (s.type === 'timer') { this.timeLeft = s.seconds; this.advance(); return; }
+    if (s.type === 'act') { s.fn(this.G); this.advance(); return; }
     this.sub = '';
     this.G.hud.objective(s.text);
     s.start?.(this.G, this);
@@ -207,16 +221,16 @@ export class Missions {
     this.active = null;
     this.timeLeft = 0;
     this.marker.hide();
-    G.addMoney(m.reward);
+    if (m.reward) G.addMoney(m.reward);
     G.audio.pass();
     G.hud.objective('');
-    G.hud.big('MISSION PASSED', `+$${m.reward.toLocaleString('en-US')}`, 4);
+    G.hud.big('MISSION PASSED', m.reward ? `+$${m.reward.toLocaleString('en-US')}` : m.outro || '', 4);
     this.index++;
     this.cooldown = 4;
     G.save();
     if (this.done) {
       setTimeout(() => {
-        G.hud.big('PORT SOLANO IS YOURS', 'All missions complete. The city is still open: find every neon shell.', 7);
+        G.hud.big('PORT SOLANO IS YOURS', 'Every job is done. Buy property, upgrade your ride, find every neon shell.', 7);
       }, 4500);
     }
   }
@@ -246,13 +260,17 @@ export class Missions {
       if (c) {
         if (!this.contactMarker.visible) this.contactMarker.show(c.x, c.z);
         const P = G.player.pos;
-        if (this.cooldown <= 0 && G.player.alive && this.contactMarker.inside(P.x, P.z, 0.5)) {
+        if (this.cooldown <= 0 && G.player.alive && G.player.space === G.world && this.contactMarker.inside(P.x, P.z, 0.5)) {
           if (G.wanted.stars > 0) {
             if (!this._warned) { G.notify('Lose your wanted level before meeting Dex.', 2.5); this._warned = true; }
+          } else if (this.index === 5 && G.heist.closed) {
+            if (!this._warned) { G.notify(`Dex: "Lay low. The bank is crawling with cops." (${G.heist.statusLine()})`, 3); this._warned = true; }
           } else { this._warned = false; this.start(); }
         } else this._warned = false;
       } else this.contactMarker.hide();
-      G.hud.timer(null);
+      if (!G.heist.running) G.hud.timer(null);
+      const H = G.heist;
+      G.hud.objective(H.running ? H.objective : '');
       return;
     }
 
@@ -261,7 +279,7 @@ export class Missions {
       S.t += dt;
       G.hud.subtitle(S.lines[S.i]);
       const skip = G.input.hit('Enter') || G.input.hit('NumpadEnter') || G.input.touch.enter;
-      if (S.t > 3.6 || skip) {
+      if (S.t > 4 || skip) {
         S.i++; S.t = 0;
         if (S.i >= S.lines.length) {
           this.say = null;
@@ -288,5 +306,3 @@ export class Missions {
     return null;
   }
 }
-
-export { LAND, PIER };
