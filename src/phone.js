@@ -1,7 +1,9 @@
 const $ = (id) => document.getElementById(id);
 
-// Dex rings when he has the next job. Answer (Y) to start it on the spot,
-// or ignore it (X) and meet him at the motel later.
+// Dex and his phone. While the mission guide is open he rings when he has the next job: answer (Y)
+// to start it on the spot, or ignore it (X). While the guide is closed he never interrupts; he
+// leaves a voicemail in the guide instead. You can call him yourself from the open guide (Y), or
+// meet him at the motel.
 export class Phone {
   constructor(G) {
     this.G = G;
@@ -9,10 +11,13 @@ export class Phone {
     this.callT = 25;
     this.t = 0;
     this.ringT = 0;
-    this.textT = 0;
+    this.voicemail = false; // Dex is waiting for a call back
     this.el = { box: $('phone'), from: $('ph-from'), msg: $('ph-msg'), actions: $('ph-actions') };
-    $('ph-answer').addEventListener('click', () => this.answer());
-    $('ph-decline').addEventListener('click', () => this.decline(false));
+    for (const [id, fn] of [['ph-answer', () => this.answer()], ['ph-decline', () => this.decline(false)]]) {
+      const b = $(id);
+      b.addEventListener('mousedown', (e) => e.preventDefault());
+      b.addEventListener('click', () => { fn(); b.blur(); });
+    }
   }
 
   get ringing() { return this.state === 'ringing'; }
@@ -22,21 +27,23 @@ export class Phone {
     return !G.missions.active && !G.missions.done && G.wanted.stars === 0 && G.player.alive && !G.sequence &&
       !G.heist.running && G.player.space === G.world && !G.ui.open && !G.transitioning;
   }
+  // can the player ring Dex for the next job right now?
+  canDial() {
+    const m = this.G.missions.current;
+    return !this.ringing && !!m && m.phone !== false && this.canCall();
+  }
 
-  show(from, msg, actions) {
+  show(from, msg) {
     this.el.from.textContent = from;
     this.el.msg.textContent = msg;
-    this.el.actions.hidden = !actions;
     this.el.box.hidden = false;
-    this.el.box.classList.toggle('ringing', actions);
+    this.el.box.classList.add('ringing');
   }
   hide() { this.el.box.hidden = true; this.el.box.classList.remove('ringing'); }
 
-  text(from, msg, dur = 6) {
-    if (this.ringing) return;
-    this.state = 'text';
-    this.textT = dur;
-    this.show(from, msg, false);
+  // texts from Dex land in the guide
+  text(from, msg) {
+    this.G.guide.post(msg, { from: from === 'DEX' ? 'Dex' : from, kind: 'dex' });
     this.G.audio.click();
   }
 
@@ -45,14 +52,29 @@ export class Phone {
     this.state = 'ringing';
     this.t = 0;
     this.ringT = 0;
-    this.show('INCOMING CALL · DEX', m.pitch || m.title, true);
+    this.show('INCOMING CALL · DEX', m.pitch || m.title);
     this.G.guide.tip('call');
+  }
+
+  leaveVoicemail() {
+    const m = this.G.missions.current;
+    this.voicemail = true;
+    this.G.guide.post(m.pitch || `Got a job for you: ${m.title}.`, { from: 'Dex · voicemail', kind: 'dex' });
+    this.G.audio.click();
   }
 
   answer() {
     if (!this.ringing) return;
     this.state = 'idle';
     this.hide();
+    this.voicemail = false;
+    this.G.audio.click();
+    this.G.missions.start();
+  }
+
+  dial() {
+    if (!this.canDial()) return;
+    this.voicemail = false;
     this.G.audio.click();
     this.G.missions.start();
   }
@@ -61,19 +83,17 @@ export class Phone {
     if (!this.ringing) return;
     this.state = 'idle';
     this.hide();
-    this.callT = 120;
-    this.G.notify(missed ? 'Missed call from Dex. He\'ll be at the Seabreeze Motel.' : 'Sent Dex to voicemail. Meet him at the motel when you\'re ready.', 3.5);
+    this.voicemail = true;
+    this.G.guide.post(missed ? 'Missed call. I\'ll be at the Seabreeze Motel, or call me back.' : 'Fine, call me back when you\'re ready.', { from: 'Dex', kind: 'dex' });
   }
 
-  afterMission() { this.callT = 22; }
+  afterMission() { this.callT = 22; this.voicemail = false; }
 
   update(dt) {
     const G = this.G, inp = G.input;
-    if (this.state === 'text') {
-      this.textT -= dt;
-      if (this.textT <= 0) { this.state = 'idle'; this.hide(); }
-    }
     if (this.ringing) {
+      // closing the guide mid-call turns the call into a voicemail
+      if (!G.guide.on) { this.state = 'idle'; this.hide(); this.leaveVoicemail(); return; }
       this.t += dt;
       this.ringT -= dt;
       if (this.ringT <= 0) { G.audio.ring(); this.ringT = 1.6; }
@@ -83,10 +103,11 @@ export class Phone {
       else if (this.t > 15) this.decline(true);
       return;
     }
+    if (G.guide.on && inp.hit('KeyY') && this.canDial()) { this.dial(); return; }
     const M = G.missions;
-    if (M.active || M.done || M.current.phone === false) return;
+    if (M.active || M.done || M.current.phone === false || this.voicemail) return;
     if (!this.canCall()) return;
     this.callT -= dt;
-    if (this.callT <= 0) this.ring();
+    if (this.callT <= 0) { if (G.guide.on) this.ring(); else this.leaveVoicemail(); }
   }
 }

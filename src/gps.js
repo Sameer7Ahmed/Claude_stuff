@@ -2,8 +2,8 @@ import * as THREE from '../vendor/three.module.min.js';
 
 const MAX_CHEVRONS = 48;
 
-// Road routing to the current goal: a map waypoint if you set one, otherwise whatever
-// the guide says comes next (mission objective, getaway, or Dex for the next job).
+// Road routing to the current goal: a map waypoint if you set one, otherwise (only while the
+// mission guide is open) whatever the guide says comes next: objective, getaway, or Dex.
 export class GPS {
   constructor(G) {
     this.G = G;
@@ -15,6 +15,8 @@ export class GPS {
     this.color = '#ffd23f';
     this.recalcT = 0;
     this.goalKey = '';
+    this.fade = 0;         // 0..1, eases arrows and route lines in and out
+    this.lastGoal = null;  // kept while fading out
     const shape = new THREE.Shape([[0, 1.1], [1.1, -0.05], [1.1, -0.55], [0, 0.5], [-1.1, -0.55], [-1.1, -0.05]].map(([x, y]) => new THREE.Vector2(x, y)));
     const geo = new THREE.ShapeGeometry(shape).rotateX(Math.PI / 2);
     this.mat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4 });
@@ -41,7 +43,7 @@ export class GPS {
     this.G.notify('Waypoint cleared', 1.5);
   }
 
-  get goal() { return this.waypoint || this.G.guide.target; }
+  get goal() { return this.waypoint || (this.G.guide.on ? this.G.guide.target : null); }
 
   update(dt) {
     const G = this.G, W = G.world;
@@ -52,8 +54,11 @@ export class GPS {
       G.notify('You have arrived.', 1.8);
       G.audio.checkpoint();
     }
-    const goal = this.goal;
-    if (!goal) { this.route = null; this.remaining = []; this.turn = null; this.mesh.count = 0; this.goalKey = ''; return; }
+    const want = this.goal;
+    if (want) this.lastGoal = want;
+    this.fade = Math.max(0, Math.min(1, this.fade + (want ? dt : -dt) * 4));
+    const goal = want || (this.fade > 0 ? this.lastGoal : null);
+    if (!goal) { this.route = null; this.remaining = []; this.turn = null; this.mesh.count = 0; this.goalKey = ''; this.lastGoal = null; return; }
     this.color = goal.color || '#ffd23f';
     const key = `${Math.round(goal.x / 4)},${Math.round(goal.z / 4)}`;
     this.recalcT -= dt;
@@ -130,7 +135,7 @@ export class GPS {
       this.mesh.setMatrixAt(n, this._m);
       const pulse = 0.25 + 0.75 * Math.max(0, Math.sin(target * 0.18 - G.time * 7));
       const fade = 1 - Math.max(0, (target - end * 0.6) / (end * 0.4 + 1));
-      this.mesh.setColorAt(n, this._c.copy(this._base).multiplyScalar(pulse * 0.85 * Math.max(0.15, fade)));
+      this.mesh.setColorAt(n, this._c.copy(this._base).multiplyScalar(pulse * 0.85 * Math.max(0.15, fade) * this.fade));
       n++;
       s = target;
     }

@@ -120,6 +120,12 @@ export class Marker {
     this.beamMat = new THREE.MeshBasicMaterial({ color, map: beamTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, opacity: 0.55, fog: height < 30 });
     const beam = new THREE.Mesh(beamGeo, this.beamMat);
     beam.scale.set(radius * 0.8, height, radius * 0.8);
+    // tall beacons (seen across the coast) drop to a short ground beam while the guide is off
+    this.beam = beam;
+    this.tallH = height;
+    this.lowH = Math.min(height, 10);
+    this.tall = true;
+    this.h = height;
     this.ringMat = new THREE.MeshBasicMaterial({ color, map: ringTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
     this.ring = new THREE.Mesh(ringGeo, this.ringMat);
     this.ring.scale.setScalar(radius);
@@ -133,6 +139,7 @@ export class Marker {
     this.t = Math.random() * 10;
   }
   show(x, z) {
+    if (!this.group.visible) { this.h = this.tall ? this.tallH : this.lowH; this.beam.scale.y = this.h; }
     this.x = x; this.z = z;
     this.group.position.set(x, this.G.world.groundY(x, z), z);
     this.group.visible = true;
@@ -142,6 +149,12 @@ export class Marker {
   update(dt) {
     if (!this.group.visible) return;
     this.t += dt;
+    const want = this.tall ? this.tallH : this.lowH;
+    if (this.h !== want) {
+      this.h += (want - this.h) * Math.min(1, dt * 5);
+      if (Math.abs(want - this.h) < 0.05) this.h = want;
+      this.beam.scale.y = this.h;
+    }
     const s = 1 + Math.sin(this.t * 3) * 0.06;
     this.ring.scale.set(this.radius * s, 1, this.radius * s);
     this.ring.rotation.y += dt;

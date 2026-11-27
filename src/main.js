@@ -403,6 +403,7 @@ function step(dt) {
   const P = G.player;
   if (input.hit('KeyM') || input.touch.map) G.hud.toggleMap();
   if (input.hit('KeyN')) G.notify(G.audio.toggleMute() ? 'Sound off' : 'Sound on', 1.2);
+  if (input.hit('KeyG')) G.guide.toggle();
   if (G.hud.mapOpen) return;
 
   G.interact.update(dt);
@@ -500,7 +501,8 @@ function startGame() {
   G.cam.snap(Math.PI / 2);
   input.wantLock = true;
   input.requestLock();
-  if (!G.missions.done) G.notify(G.missions.index === 0 ? 'Meet Dex at the blue marker by the Seabreeze Motel. Follow the arrows.' : 'Welcome back. Dex will call with the next job.', 4);
+  if (!G.missions.done) G.guide.post(G.missions.index === 0 ? 'Meet me at the blue marker outside the Seabreeze Motel.' : 'Welcome back. Call me when you want work.', { from: 'Dex', kind: 'dex' });
+  G.guide.intro();
 }
 function pause(on) {
   if (!G.started) return;
@@ -512,6 +514,9 @@ function pause(on) {
 
 document.getElementById('play').addEventListener('click', startGame);
 document.getElementById('resume').addEventListener('click', () => pause(false));
+const guideSwitch = document.getElementById('guide-toggle');
+guideSwitch.addEventListener('mousedown', (e) => e.preventDefault());
+guideSwitch.addEventListener('click', () => G.guide.toggle());
 document.getElementById('reset').addEventListener('click', () => {
   try { for (const k of [SAVE_KEY, V2_SAVE_KEY, OLD_SAVE_KEY]) localStorage.removeItem(k); } catch { /* ignore */ }
   location.reload();
@@ -526,6 +531,7 @@ window.addEventListener('keydown', (e) => {
   if (!G.started) { if (e.code === 'Enter') startGame(); return; }
   if (G.ui.open) return;
   if (G.hud.mapOpen && e.code === 'Escape') { G.hud.toggleMap(false); return; }
+  if (G.paused && e.code === 'KeyG') { G.guide.toggle(); return; }
   if (e.code === 'KeyP' || (e.code === 'Escape' && !input.locked)) pause(!G.paused);
 });
 document.addEventListener('visibilitychange', () => { if (document.hidden && G.started && !G.ui.open) pause(true); });

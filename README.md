@@ -29,8 +29,9 @@ python3 -m http.server 8000
 | Shift (in a car) | Nitro, once fitted |
 | F (hold) | Some actions are held: bagging cash, the gold |
 | H | Horn |
+| G | Mission guide on or off (also the compass button at the top left, and a switch in the pause menu) |
 | M | Full map (click to set a waypoint; quick routes on the side) |
-| Y / X | Answer or ignore Dex's call |
+| Y / X | With the guide open: call Dex for the next job, or answer / ignore his call |
 | P / Esc | Pause |
 | N | Mute |
 | Enter | Skip dialogue |
@@ -46,11 +47,13 @@ On touch devices an on-screen joystick and buttons appear automatically, and you
   - **Harbor District** has container yards, gantry cranes, warehouses, fuel tanks and a moored freighter. It's reached by a lift bridge.
   - **Lantern Key** is a resort island with a lighthouse whose beam sweeps the sea at night. It's reached by a long, curving cable-stayed causeway.
   - Bridge decks, hills and slopes are real driving surfaces: climbs slow you, descents speed you up, and grass and sand cost grip. The ocean shader draws shallows and surf along every coastline, canal included.
-- **Direction**:
-  - A shortest-path GPS draws animated arrows on the road, the route on the minimap and full map, and gives turn-by-turn instructions with distances.
-  - An on-screen waypoint marker pins to the screen edge when the target is out of view. Tall objective beacons can be seen from across the coast.
-  - Dex phones with the next job: answer and the mission starts where you stand.
-  - The pause screen shows a journal of story progress, discovered regions and assets. Road signs point to each region, and each region greets you with a title card and a one-time discovery bonus.
+- **Mission guide, on demand**: the HUD stays clean by default. Mission guidance only appears when you open the guide with the compass button or G.
+  - **While it's closed**, nothing interrupts you. Briefings, Dex's voicemails and texts, job updates and tips wait behind the button. A small badge counts them, and the button pings once when something new arrives (red for anything urgent, such as a jammed drill). Objective markers still sit on the ground, so a mission can be finished without the guide.
+  - **While it's open**, a panel shows the job, the current objective, distance and turn-by-turn directions, plus the latest messages. A shortest-path GPS draws arrows on the road and the route on the minimap, and objective beacons rise tall enough to see across the coast. Dex rings when he has work; press Y to answer, or call him yourself.
+  - A small waypoint marker (just an icon and the distance) tracks the target and pins to the screen edge when it's off-view.
+  - Map waypoints you set yourself always get a route, guide or not.
+  - The setting is saved. The pause-screen journal keeps story progress, discovered regions, assets and the recent message history.
+  - Road signs point to each region, and each region greets you with a title card and a one-time discovery bonus.
 - **Day/night cycle**: a full day takes 12 minutes. The sky and ocean are drawn by shaders, building windows light up at night, street lamps cast pools of light, cars turn on their headlights and stars come out.
 - **Arcade car physics**: six vehicle types with grip and drift, handbrake slides, softer handling on sand, ramp jumps with airtime bonuses, crash damage, smoke, fire and explosions.
 - **Traffic AI**: cars drive in lanes on the road graph, turn at intersections, brake for cars and pedestrians, and back out when they get stuck.
@@ -86,9 +89,9 @@ On touch devices an on-screen joystick and buttons appear automatically, and you
 | `src/layout.js` | Coast layout data: land shapes, bridges, region roads, region names |
 | `src/regions.js` | Builds the coast regions, bridges, road surfaces, signs and the shoreline mask |
 | `src/terrain.js` | Sundown Bluffs heightfield with carved roads and building pads |
-| `src/gps.js` | Route finding to the current goal, on-road arrows, turn instructions |
-| `src/guide.js` | What to do next: tracker, waypoint marker, region cards, tips, journal |
-| `src/phone.js` | Dex's phone calls and texts |
+| `src/gps.js` | Route finding to a waypoint or (with the guide open) the current goal, on-road arrows, turn instructions |
+| `src/guide.js` | The on-demand mission guide: toggle, panel, message queue and badge, waypoint marker, region cards, journal |
+| `src/phone.js` | Dex's calls, voicemails, call-backs and texts |
 | `src/env.js` | Sky, ocean, sun/moon lighting, day/night |
 | `src/vehicle.js` | Car physics and car-vs-car collisions |
 | `src/ai.js` | Lane-following driver for traffic and police |

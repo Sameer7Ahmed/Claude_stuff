@@ -79,7 +79,7 @@ export class Heist {
       if (this.phase !== 'active' || !this.keycard) { G.audio.deny(); return; }
       p.gateBox.disabled = true;
       G.audio.equip();
-      G.notify('Gate open. Get to the vault.', 2);
+      G.guide.post('Gate open. Get to the vault.', { from: 'Heist', kind: 'job' });
     });
     I.at(0, -4.4, 2.4, () => this.vaultLabel(), () => this.vaultPress());
     p.trolleys.forEach((t, i) => {
@@ -125,7 +125,7 @@ export class Heist {
       d.jams = [rand(0.28, 0.42), rand(0.62, 0.78)];
       this.bank.parts.drill.visible = true;
       this.triggerAlarm();
-      G.notify('Drill running. Hold them off.', 2.5);
+      G.guide.post('Drill running. Hold them off.', { from: 'Heist', kind: 'job' });
     } else if (d.state === 'jammed') {
       d.state = 'running';
       G.audio.equip();
@@ -302,7 +302,7 @@ export class Heist {
         d.state = 'jammed';
         G.audio.setLoop('drill', false);
         G.audio.deny();
-        G.notify('The drill jammed! Get back to the vault door.', 2.5);
+        G.guide.post('The drill jammed! Get back to the vault door.', { from: 'Heist', alert: true });
       }
       if (d.progress >= 1) {
         d.state = 'done';

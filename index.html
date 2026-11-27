@@ -26,22 +26,36 @@
     </div>
     <div id="bag" hidden><span>BAG</span><b id="bag-val">$0</b></div>
   </div>
-  <div id="tracker" hidden>
-    <div id="tk-kicker" class="kicker"></div>
-    <div id="tk-title"></div>
-    <div class="tk-route"><i id="tk-turn" data-dir="ahead"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 8h-4.5v10h-5V11H5z"/></svg></i><b id="tk-dist"></b><span id="tk-dest"></span></div>
-    <div id="tk-hint"></div>
+  <div id="top-left">
+    <div id="guide">
+      <button id="guide-btn" type="button" aria-pressed="false" aria-controls="tracker" aria-label="Mission guide (G)" title="Mission guide (G)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M15.6 8.4l-2.2 5-5 2.2 2.2-5z" fill="currentColor"/><circle cx="12" cy="12" r="1.1" fill="rgba(10,7,22,0.9)"/></svg>
+        <span class="gb-label">Mission guide</span>
+        <kbd class="gb-key">G</kbd>
+        <b id="guide-badge" hidden></b>
+      </button>
+      <div id="tracker" role="region" aria-label="Mission guide">
+        <div class="tk-clip"><div class="tk-in">
+          <div id="tk-kicker" class="kicker"></div>
+          <div id="tk-title"></div>
+          <div id="tk-obj"></div>
+          <div class="tk-route"><i id="tk-turn" data-dir="ahead"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 8h-4.5v10h-5V11H5z"/></svg></i><b id="tk-dist"></b><span id="tk-dest"></span></div>
+          <div id="tk-hint"></div>
+          <ul id="tk-msgs"></ul>
+          <button id="tk-act" type="button" hidden><kbd>Y</kbd><span>Call Dex</span></button>
+        </div></div>
+      </div>
+    </div>
+    <div id="notify"></div>
   </div>
-  <div id="wp-marker" hidden><i></i><b id="wp-dist"></b><span id="wp-label"></span></div>
+  <div id="wp-marker" aria-hidden="true"><i></i><b id="wp-dist"></b></div>
   <div id="region-card"><div id="rc-name"></div><div id="rc-tag"></div></div>
   <div id="phone" hidden>
     <div class="ph-top"><span class="ph-dot"></span><b id="ph-from"></b></div>
     <p id="ph-msg"></p>
     <div id="ph-actions"><button id="ph-answer" type="button"><kbd>Y</kbd> Answer</button><button id="ph-decline" type="button" class="ghost"><kbd>X</kbd> Ignore</button></div>
   </div>
-  <div id="objective" hidden></div>
   <div id="timer" hidden></div>
-  <div id="notify"></div>
   <div id="radio"></div>
   <div id="place"></div>
   <div id="prompt" hidden></div>
@@ -118,8 +132,8 @@
       <div><kbd>1</kbd>–<kbd>5</kbd><span>Weapons</span><kbd>Q</kbd><span>or wheel to cycle</span></div>
       <div><kbd>F</kbd><span>Cars, doors, shops (hold for some actions)</span></div>
       <div><kbd>Space</kbd><span>Jump / handbrake</span><kbd>H</kbd><span>Horn</span><kbd>R</kbd><span>Radio in car</span></div>
-      <div><kbd>M</kbd><span>Map (click to set a route)</span><kbd>P</kbd><span>Pause &amp; journal</span></div>
-      <div><kbd>Y</kbd><span>Answer Dex's call</span><kbd>X</kbd><span>Ignore</span><kbd>N</kbd><span>Mute</span></div>
+      <div><kbd>G</kbd><span>Mission guide on / off</span><kbd>Y</kbd><span>Call or answer Dex</span><kbd>X</kbd><span>Ignore</span></div>
+      <div><kbd>M</kbd><span>Map (click to set a route)</span><kbd>P</kbd><span>Pause &amp; journal</span><kbd>N</kbd><span>Mute</span></div>
     </div>
     <p class="fine">Shops, properties and Paint &amp; Pay Customs turn cash into power. Dex's last job is the bank.</p>
   </div>
@@ -130,6 +144,7 @@
     <div class="pause-head">
       <h2>Paused</h2>
       <button id="resume" type="button">RESUME</button>
+      <button id="guide-toggle" type="button" class="switch" aria-pressed="false">Mission guide <span>Off</span><kbd>G</kbd></button>
     </div>
     <div id="journal"></div>
     <button id="reset" type="button" class="ghost">Reset progress</button>

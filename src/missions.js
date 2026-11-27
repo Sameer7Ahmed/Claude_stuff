@@ -222,7 +222,7 @@ export function missionList(W) {
         }),
         goTo(() => S.crate, 'Grab the crate. The dockhands will fight for it.', {
           radius: 2.6, dest: 'The crate',
-          onArrive: (G, M) => { for (const p of M.props) G.scene.remove(p); M.props.length = 0; G.notify('Crate loaded. Now get it to Lantern Key.', 2.5); G.audio.equip(); },
+          onArrive: (G, M) => { for (const p of M.props) G.scene.remove(p); M.props.length = 0; G.guide.post('Crate loaded. Now get it to Lantern Key.', { from: 'Job', kind: 'job' }); G.audio.equip(); },
         }),
         getCar('Get a vehicle for the long drive.'),
         goTo(() => S.lighthouse, 'Deliver the crate to the Lantern Key lighthouse.', { car: true, radius: 6, dest: 'Lantern Key lighthouse' }),
@@ -298,8 +298,13 @@ export class Missions {
     const s = A.m.steps[A.step];
     if (!s) { this.pass(); return; }
     if (s.type === 'say') {
-      this.say = { lines: s.lines, i: 0, t: 0 };
-      this.G.hud.objective('');
+      // the briefing always lands in the guide's messages; it only plays as subtitles while the
+      // guide is open (closed, the mission carries straight on and the lines wait behind the badge)
+      const G = this.G, on = G.guide.on;
+      const msgs = s.lines.map((line) => G.guide.post(line.replace(/^DEX:\s*/, ''), { from: 'Dex', kind: 'dex', shown: on }));
+      G.hud.objective('');
+      if (!on) { this.advance(); return; }
+      this.say = { lines: s.lines, i: 0, t: 0, msgs };
       return;
     }
     if (s.type === 'timer') { this.timeLeft = s.seconds; this.advance(); return; }
@@ -307,6 +312,16 @@ export class Missions {
     this.sub = '';
     this.G.hud.objective(s.text);
     s.start?.(this.G, this);
+  }
+
+  // finish the briefing now (skipped, or the guide was closed mid-briefing)
+  endBriefing() {
+    const S = this.say;
+    if (!S) return;
+    if (S.i + 1 < S.lines.length) this.G.guide.requeue(S.msgs.slice(S.i + 1));
+    this.say = null;
+    this.G.hud.subtitle('');
+    this.advance();
   }
 
   cleanup() {
@@ -333,7 +348,7 @@ export class Missions {
     if (this.done) {
       setTimeout(() => G.hud.big('PORT SOLANO IS YOURS', 'Every job is done. Buy property, upgrade your ride, explore the coast, find every neon shell.', 7), 4500);
     } else {
-      setTimeout(() => G.phone.text('DEX', `Nice work. Catch your breath, I'll call about "${this.current.title}".`), 4600);
+      setTimeout(() => G.phone.text('DEX', `Nice work. Catch your breath. Next up: "${this.current.title}".`), 4600);
     }
   }
 
@@ -385,11 +400,7 @@ export class Missions {
       const skip = G.input.hit('Enter') || G.input.hit('NumpadEnter') || G.input.touch.enter;
       if (S.t > 4 || skip) {
         S.i++; S.t = 0;
-        if (S.i >= S.lines.length) {
-          this.say = null;
-          G.hud.subtitle('');
-          this.advance();
-        }
+        if (S.i >= S.lines.length) this.endBriefing();
       }
       return;
     }

@@ -28,7 +28,7 @@ export class HUD {
   constructor(G) {
     this.G = G;
     this.el = {
-      hud: $('hud'), clock: $('clock'), money: $('money'), stars: $('stars'), objective: $('objective'),
+      hud: $('hud'), clock: $('clock'), money: $('money'), stars: $('stars'),
       timer: $('timer'), notify: $('notify'), radio: $('radio'), subtitle: $('subtitle'), big: $('big'),
       bigTitle: $('big-title'), bigSub: $('big-sub'), hp: $('hp').firstElementChild, bust: $('bust'),
       bustFill: $('bust').firstElementChild, veh: $('vehicle-panel'), vehName: $('veh-name'), speed: $('speed').firstElementChild,
@@ -48,6 +48,7 @@ export class HUD {
     this.bigmap = $('bigmap');
     this.bctx = this.bigmap.getContext('2d');
     this.shownMoney = 0;
+    this.objText = '';
     this.notifyT = 0;
     this.bigT = 0;
     this.radioT = 0;
@@ -137,12 +138,8 @@ export class HUD {
     this.map = c;
   }
 
-  objective(html) {
-    if (this._obj === html) return;
-    this._obj = html;
-    this.el.objective.innerHTML = html;
-    this.el.objective.hidden = !html;
-  }
+  // the current objective lives in the mission guide panel (see guide.js), not on the HUD
+  objective(html) { this.objText = html || ''; }
   subtitle(text) {
     if (this._sub === text) return;
     this._sub = text;
@@ -324,17 +321,19 @@ export class HUD {
     for (const n of G.npcs) if (n.isCop && !n.dead && n.space === G.world) out.push({ x: n.x, z: n.z, kind: 'cop', color: '#ff6677' });
     for (const n of G.npcs) if (n.role === 'guard' && n.hostile && !n.dead && n.space === G.world) out.push({ x: n.x, z: n.z, kind: 'cop', color: '#ffb347' });
     if (G.wanted.heli) out.push({ x: G.wanted.heli.x, z: G.wanted.heli.z, kind: 'heli', color: '#ff3355' });
+    // mission blips only cling to the minimap edge (acting as a compass) while the guide is open
+    const pin = G.guide.on;
     const mt = G.missions.targetPos();
-    if (mt) out.push({ x: mt.x, z: mt.z, kind: 'target', color: '#ffd23f', edge: true });
+    if (mt) out.push({ x: mt.x, z: mt.z, kind: 'target', color: '#ffd23f', edge: pin });
     const H = G.heist;
     if (H.phase === 'escape') {
-      out.push({ x: H.boatMarker.x, z: H.boatMarker.z, kind: 'target', color: '#ffd23f', edge: true });
-      out.push({ x: H.lockupMarker.x, z: H.lockupMarker.z, kind: 'target', color: '#29e7ff', edge: true });
+      out.push({ x: H.boatMarker.x, z: H.boatMarker.z, kind: 'target', color: '#ffd23f', edge: pin });
+      out.push({ x: H.lockupMarker.x, z: H.lockupMarker.z, kind: 'target', color: '#29e7ff', edge: pin });
     }
     const wp = G.gps.waypoint;
     if (wp) out.push({ x: wp.x, z: wp.z, kind: 'target', color: '#ff3fa4', edge: true });
     const c = G.missions.contactPos();
-    if (c) out.push({ x: c.x, z: c.z, kind: 'contact', color: '#4dd2ff', edge: true, label: 'D' });
+    if (c) out.push({ x: c.x, z: c.z, kind: 'contact', color: '#4dd2ff', edge: pin, label: 'D' });
     const S = G.world.specials, D = G.world.doors;
     const owned = G.economy.owned;
     out.push({ x: S.paint.x, z: S.paint.z, kind: 'shop', color: '#ff3fa4', label: 'P' });
@@ -354,8 +353,9 @@ export class HUD {
 
   drawRoute(g, ox, oz, scale) {
     const R = this.G.gps.remaining;
-    if (!R || R.length < 2) return;
+    if (!R || R.length < 2 || this.G.gps.fade <= 0) return;
     g.save();
+    g.globalAlpha = this.G.gps.fade;
     g.lineCap = 'round'; g.lineJoin = 'round';
     g.beginPath();
     R.forEach((p, k) => (k ? g.lineTo((p.x - ox) * scale, (p.z - oz) * scale) : g.moveTo((p.x - ox) * scale, (p.z - oz) * scale)));
