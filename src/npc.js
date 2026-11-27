@@ -68,6 +68,7 @@ export class Npc {
     this.path = null; this.pathT = 0;
     this.lastX = x; this.lastZ = z;
     this.onDeath = opts.onDeath || null;
+    this.aggro = opts.aggro || 0;
     G.npcs.push(this);
   }
 
@@ -149,6 +150,7 @@ export class Npc {
     const d = Math.hypot(dx, dz) || 1;
     let mx = 0, mz = 0, sp = 0, faceX = 0, faceZ = 0, aim = false;
 
+    if (this.aggro && !this.hostile && same && d < this.aggro && this.canSee(pp)) { this.hostile = true; this.state = 'combat'; }
     // armed staff turn hostile when they see a drawn weapon pointed around, or on alarm
     if (this.role === 'guard' && !this.hostile && same) {
       if (this.space.alarm || (G.arsenal.armed && P.aiming && d < 14 && this.canSee(pp))) {
@@ -296,6 +298,8 @@ export class Npc {
       const ex = this.x - o.x, ez = this.z - o.z, l2 = ex * ex + ez * ez;
       if (l2 < 0.49 && l2 > 1e-6) { const l = Math.sqrt(l2); this.x += (ex / l) * (0.7 - l) * 0.5; this.z += (ez / l) * (0.7 - l) * 0.5; }
     }
+    if (S.isLand(this.x, this.z)) { this.landX = this.x; this.landZ = this.z; }
+    else if (this.landX !== undefined) { this.x = this.landX; this.z = this.landZ; }
     this.y = S.groundY(this.x, this.z);
   }
 

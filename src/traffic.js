@@ -71,6 +71,8 @@ export function spawnParked(G) {
     G.vehicles.push(v);
   }
   for (const s of W.policeLot || []) G.vehicles.push(new Vehicle(G, 'police', '#16181d', s.x, s.z, s.h));
+  // driveways, the resort lot and the lookout out on the coast
+  for (const p of W.regionParked || []) G.vehicles.push(new Vehicle(G, p.type, CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)], p.x, p.z, p.h));
 }
 
 export function initTraffic(G, count) {

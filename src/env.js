@@ -51,7 +51,7 @@ void main() {
 const oceanFrag = /* glsl */`
 #include <fog_pars_fragment>
 uniform float uTime; uniform vec3 uTop; uniform vec3 uHorizon; uniform vec3 uDeep; uniform vec3 uShallow;
-uniform vec3 uSunDir; uniform vec3 uSunColor; uniform vec4 uLand; uniform float uNight;
+uniform vec3 uSunDir; uniform vec3 uSunColor; uniform sampler2D uMask; uniform vec4 uMaskB; uniform float uNight;
 varying vec3 vWorld;
 vec2 wave(vec2 p, vec2 dir, float k, float w, float a, float t) {
   float ph = dot(dir, p) * k + t * w;
@@ -69,9 +69,10 @@ void main() {
   vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
   vec3 V = normalize(cameraPosition - vWorld);
   float fres = 0.04 + 0.96 * pow(1.0 - max(dot(n, V), 0.0), 5.0);
-  vec2 dd = max(max(uLand.xy - p, p - uLand.zw), 0.0);
-  float dist = length(dd);
-  vec3 water = mix(uShallow, uDeep, smoothstep(0.0, 70.0, dist));
+  // shoreline field: 1 at the coast, 0 out at sea
+  float m = texture2D(uMask, (p - uMaskB.xy) / (uMaskB.zw - uMaskB.xy)).r;
+  float dist = (1.0 - m) * 56.0;
+  vec3 water = mix(uDeep, uShallow, smoothstep(0.0, 0.85, m));
   vec3 R = reflect(-V, n);
   vec3 refl = mix(uHorizon, uTop, clamp(R.y * 1.5, 0.0, 1.0));
   vec3 col = mix(water, refl, clamp(fres, 0.0, 1.0));
@@ -88,7 +89,7 @@ void main() {
 }`;
 
 export class Environment {
-  constructor(scene, quality) {
+  constructor(scene, quality, world) {
     this.scene = scene;
     this.time = 17.6; // hours; start in golden hour
     this.hoursPerSecond = 24 / (12 * 60); // full day in 12 minutes
@@ -139,8 +140,13 @@ export class Environment {
       uTime: { value: 0 }, uTop: { value: new THREE.Color() }, uHorizon: { value: new THREE.Color() },
       uDeep: { value: new THREE.Color('#0b4f7a') }, uShallow: { value: new THREE.Color('#1fb5b8') },
       uSunDir: { value: new THREE.Vector3() }, uSunColor: { value: new THREE.Color() },
-      uLand: { value: new THREE.Vector4(LAND.minX, LAND.minZ, LAND.maxX, LAND.maxZ) }, uNight: { value: 0 },
+      uMask: { value: null }, uMaskB: { value: new THREE.Vector4(LAND.minX, LAND.minZ, LAND.maxX, LAND.maxZ) }, uNight: { value: 0 },
     }]);
+    // UniformsUtils.merge clones values, so the mask texture is assigned afterwards
+    if (world?.oceanMask) {
+      this.oceanU.uMask.value = world.oceanMask.tex;
+      this.oceanU.uMaskB.value.set(...world.oceanMask.bounds);
+    }
     this.ocean = new THREE.Mesh(new THREE.PlaneGeometry(5000, 5000).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
       uniforms: this.oceanU, vertexShader: oceanVert, fragmentShader: oceanFrag, fog: true,
     }));
@@ -231,6 +237,8 @@ export class Environment {
       world.buildingMats.forEach((m, i) => { m.emissiveIntensity = i < 2 ? 0.05 + night * 1.4 : 0.03 + night * 0.85; });
       world.lampHeadMat.color.setScalar(lerp(0.35, 1.0, night)).multiply(this._tmpC.set('#ffd9a0'));
       world.lampPoolMat.opacity = night * 0.95;
+      for (const m of world.windowMats || []) m.color.copy(m.userData.day).lerp(m.userData.night, night);
+      for (const f of world.regionUpdate || []) f(dt, this);
       for (const m of world.neonMats) {
         if (m.userData.base) m.color.copy(m.userData.base).multiplyScalar(lerp(0.75, 1.6, night));
         else m.color.setScalar(lerp(0.7, 1.35, night));

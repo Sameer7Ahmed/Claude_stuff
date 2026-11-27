@@ -11,7 +11,7 @@ import { Wanted } from './wanted.js';
 import { Pickups, Marker } from './pickups.js';
 import { HUD } from './hud.js';
 import { Missions } from './missions.js';
-import { Ped, updatePeds, respawnPed, carVsHumans } from './peds.js';
+import { Ped, updatePeds, respawnPed, carVsHumans, nearestRing } from './peds.js';
 import { collideVehicles, Vehicle } from './vehicle.js';
 import { initTraffic, manageTraffic, spawnParked } from './traffic.js';
 import { Arsenal, WEAPONS } from './weapons.js';
@@ -20,10 +20,17 @@ import { Economy } from './economy.js';
 import { Heist } from './heist.js';
 import { UI } from './ui.js';
 import { Interactions } from './interact.js';
+import { GPS } from './gps.js';
+import { Guide } from './guide.js';
+import { Phone } from './phone.js';
 import { rand, randi, seededRandom } from './util.js';
 
-const SAVE_KEY = 'neon-tides-save-v2';
+const SAVE_KEY = 'neon-tides-save-v3';
+const V2_SAVE_KEY = 'neon-tides-save-v2';
 const OLD_SAVE_KEY = 'neon-tides-save-v1';
+// story order in earlier versions, used to migrate saves to mission ids
+const V2_ORDER = ['fresh-coat', 'cold-delivery', 'coastline-sprint', 'iron-lesson', 'turn-up-heat', 'solano-job'];
+const V1_ORDER = ['fresh-coat', 'cold-delivery', 'coastline-sprint', 'turn-up-heat'];
 const canvas = document.getElementById('game');
 const input = new Input(canvas);
 const lowEnd = input.isTouch;
@@ -66,7 +73,7 @@ const G = {
 window.__G = G; // handy for debugging in the console
 
 G.world = buildWorld(outdoor, quality);
-G.env = new Environment(root, quality);
+G.env = new Environment(root, quality, G.world);
 G.effects = new Effects(root);
 G.audio = new AudioSys();
 G.arsenal = new Arsenal();
@@ -81,6 +88,9 @@ G.hud = new HUD(G);
 G.missions = new Missions(G);
 G.ui = new UI(G);
 G.interact = new Interactions(G);
+G.guide = new Guide(G);
+G.gps = new GPS(G);
+G.phone = new Phone(G);
 G.economy.attach();
 G.heist.attach();
 G.paintMarker = new Marker(G, '#ff3fa4', 6, 10);
@@ -128,18 +138,22 @@ function updateTransition(dt) {
 G.save = () => {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({
-      money: G.money, mission: G.missions.index, tokens: [...G.tokens],
+      money: G.money, completed: [...G.missions.completed], tokens: [...G.tokens],
       arsenal: G.arsenal.save(), armor: Math.round(G.player.armor),
-      economy: G.economy.save(), heist: { successes: G.heist.successes },
+      economy: G.economy.save(), heist: { successes: G.heist.successes }, guide: G.guide.save(),
     }));
   } catch { /* storage unavailable: progress lasts for this session only */ }
 };
 function load() {
   try {
-    const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    const s3 = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    const s2 = s3 ? null : JSON.parse(localStorage.getItem(V2_SAVE_KEY) || 'null');
+    const s = s3 || s2;
     if (s) {
       G.money = s.money || 0;
-      G.missions.index = Math.min(s.mission || 0, G.missions.list.length);
+      const done = s3 ? s3.completed || [] : V2_ORDER.slice(0, s2.mission || 0);
+      G.missions.completed = new Set(done.filter((id) => G.missions.list.some((m) => m.id === id)));
+      G.guide.load(s.guide);
       for (const t of s.tokens || []) G.tokens.add(t);
       G.arsenal.load(s.arsenal);
       G.player.armor = s.armor || 0;
@@ -152,7 +166,7 @@ function load() {
     const o = JSON.parse(localStorage.getItem(OLD_SAVE_KEY) || 'null');
     if (o) {
       G.money = o.money || 0;
-      G.missions.index = Math.min(o.mission || 0, 3);
+      G.missions.completed = new Set(V1_ORDER.slice(0, o.mission || 0));
       G.hud.shownMoney = G.money;
       return true;
     }
@@ -277,8 +291,7 @@ G.ejectDriver = (v) => {
   }
   if (!far) return;
   const lx = Math.cos(v.h), lz = -Math.sin(v.h);
-  const blk = G.world.blockAt(v.x, v.z) || G.world.blocks[24];
-  far.spawnAt(blk.i, blk.j);
+  far.spawnAt(nearestRing(G, v.x, v.z));
   far.x = v.x + lx * (v.spec.W / 2 + 0.7);
   far.z = v.z + lz * (v.spec.W / 2 + 0.7);
   far.knock(lx * 3, lz * 3, 2, false);
@@ -376,6 +389,8 @@ function populate() {
   const chosen = spots.filter(([x, z]) => !G.world.colliders.pointBlocked(x, z, 0.6)).slice(0, 12);
   G.tokenTotal = chosen.length;
   chosen.forEach(([x, z], id) => { if (!G.tokens.has(id)) G.pickups.add('token', x, z, { id }); });
+  G.world.regionTokens.forEach(([x, z], k) => { if (!G.tokens.has(100 + k)) G.pickups.add('token', x, z, { id: 100 + k }); });
+  G.tokenTotal = chosen.length + G.world.regionTokens.length;
   const S = G.world.specials;
   G.pickups.add('health', S.hospital.x + 4, S.hospital.z);
   for (const b of G.world.blocks) if (b.type === 'park') G.pickups.add('health', b.cx + 6, b.cz - 6);
@@ -408,6 +423,9 @@ function step(dt) {
   G.economy.update(dt);
   G.heist.update(dt);
   G.missions.update(dt);
+  G.phone.update(dt);
+  G.guide.update(dt);
+  G.gps.update(dt);
   G.pickups.update(dt);
   G.paintMarker.update(dt);
   G.chopMarker.update(dt);
@@ -482,19 +500,20 @@ function startGame() {
   G.cam.snap(Math.PI / 2);
   input.wantLock = true;
   input.requestLock();
-  if (!G.missions.done) G.notify(G.missions.index === 0 ? 'Meet Dex at the blue marker by the Seabreeze Motel.' : 'Welcome back. Dex has more work for you.', 4);
+  if (!G.missions.done) G.notify(G.missions.index === 0 ? 'Meet Dex at the blue marker by the Seabreeze Motel. Follow the arrows.' : 'Welcome back. Dex will call with the next job.', 4);
 }
 function pause(on) {
   if (!G.started) return;
   G.paused = on;
   pauseEl.hidden = !on;
+  if (on) G.guide.renderJournal();
   if (!on) { input.requestLock(); last = performance.now(); }
 }
 
 document.getElementById('play').addEventListener('click', startGame);
 document.getElementById('resume').addEventListener('click', () => pause(false));
 document.getElementById('reset').addEventListener('click', () => {
-  try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(OLD_SAVE_KEY); } catch { /* ignore */ }
+  try { for (const k of [SAVE_KEY, V2_SAVE_KEY, OLD_SAVE_KEY]) localStorage.removeItem(k); } catch { /* ignore */ }
   location.reload();
 });
 let hadLock = false;
@@ -506,6 +525,7 @@ canvas.addEventListener('click', () => { if (G.started && !G.paused && !input.lo
 window.addEventListener('keydown', (e) => {
   if (!G.started) { if (e.code === 'Enter') startGame(); return; }
   if (G.ui.open) return;
+  if (G.hud.mapOpen && e.code === 'Escape') { G.hud.toggleMap(false); return; }
   if (e.code === 'KeyP' || (e.code === 'Escape' && !input.locked)) pause(!G.paused);
 });
 document.addEventListener('visibilitychange', () => { if (document.hidden && G.started && !G.ui.open) pause(true); });
@@ -514,6 +534,7 @@ function onResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   G.effects.setScale(window.innerHeight * renderer.getPixelRatio(), camera.fov);
+  if (G.hud.mapOpen) G.hud.drawBigMap();
 }
 window.addEventListener('resize', onResize);
 

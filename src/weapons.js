@@ -147,6 +147,14 @@ export function raycast(G, space, ox, oy, oz, dx, dy, dz, maxT, opt = {}) {
     const t = rayAABB(ox, oy, oz, dx, dy, dz, b.minX, b.y0, b.minZ, b.maxX, b.y1, b.maxZ);
     if (t !== null && t < best) set(t, 'wall');
   }
+  // hills and bridge decks: march along the ray against the height field
+  if (outdoors) {
+    const lim = Math.min(best, 160);
+    for (let t = 1; t < lim; t += 1.5) {
+      const x = ox + dx * t, z = oz + dz * t;
+      if (oy + dy * t < G.world.groundY(x, z) - 0.05) { set(t, 'ground'); break; }
+    }
+  }
   for (const tg of space.targets || []) {
     if (!tg.up) continue;
     const b = tg.box;

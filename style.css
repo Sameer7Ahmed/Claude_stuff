@@ -60,7 +60,7 @@ kbd {
 }
 #timer.low { color: var(--danger); animation: blink 0.5s steps(2) infinite; }
 #notify {
-  position: absolute; top: calc(16px + var(--safe-t)); left: calc(18px + var(--safe-l)); max-width: min(320px, 40vw);
+  position: absolute; top: calc(150px + var(--safe-t)); left: calc(18px + var(--safe-l)); max-width: min(320px, 40vw);
   padding: 10px 14px; background: rgba(10, 7, 22, 0.72); border: 1px solid rgba(41, 231, 255, 0.35);
   font: 500 0.95rem/1.35 var(--font-ui); opacity: 0; transform: translateY(-6px); transition: opacity 0.25s, transform 0.25s;
 }
@@ -115,7 +115,7 @@ kbd {
 #fade { position: absolute; inset: 0; background: #000; opacity: 0; transition: opacity 0.6s; }
 #fade.on { opacity: 1; }
 
-#bigmap { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 5; }
+
 
 /* ------------------------------------------------------------ menus */
 #menu, #pause {
@@ -327,4 +327,116 @@ body.touch #top-right { top: calc(10px + var(--safe-t)); }
   #shop-list .stats { display: none; }
   .shop-panel footer .keys { display: none; }
   #w-ammo b { font-size: 1.1rem; }
+}
+
+/* ------------------------------------------------------------ direction: tracker, waypoint, region card, phone */
+#tracker {
+  position: absolute; top: calc(16px + var(--safe-t)); left: calc(18px + var(--safe-l)); width: min(300px, 44vw);
+  display: grid; gap: 3px; padding: 10px 14px 11px; background: rgba(10, 7, 22, 0.62);
+  border-left: 3px solid var(--gold); backdrop-filter: blur(3px);
+}
+#tracker .kicker { font: 600 0.72rem var(--font-ui); letter-spacing: 0.2em; text-transform: uppercase; color: var(--gold); }
+#tk-title { font: 700 1.05rem/1.2 var(--font-ui); color: var(--paper); text-wrap: balance; }
+.tk-route { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 8px; margin-top: 3px; min-width: 0; }
+#tracker.noroute .tk-route { display: none; }
+#tk-turn { width: 26px; height: 26px; display: grid; place-items: center; background: var(--gold); border-radius: 50%; }
+#tk-turn svg { width: 18px; height: 18px; fill: var(--ink); transition: transform 0.25s; }
+#tk-turn[data-dir="left"] svg { transform: rotate(-90deg); }
+#tk-turn[data-dir="right"] svg { transform: rotate(90deg); }
+#tk-turn[data-dir="uturn"] svg { transform: rotate(180deg); }
+#tk-turn[data-dir="arrive"] { background: var(--ok); }
+#tk-turn[data-dir="exit"] { background: var(--cyan); }
+#tk-dist { font: 700 1.25rem var(--font-ui); font-variant-numeric: tabular-nums; color: var(--paper); white-space: nowrap; }
+#tk-dest { font: 500 0.85rem var(--font-ui); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#tk-hint { font: 500 0.85rem var(--font-ui); color: var(--cyan); }
+
+#wp-marker {
+  --c: var(--gold); --ang: 0rad;
+  position: absolute; left: 0; top: 0; display: grid; justify-items: center; gap: 2px; margin: -14px 0 0 -40px; width: 80px;
+  pointer-events: none; transition: opacity 0.2s;
+}
+#wp-marker i {
+  width: 18px; height: 18px; background: var(--c); transform: rotate(45deg);
+  box-shadow: 0 0 12px var(--c), 0 0 0 3px rgba(10, 7, 22, 0.55); animation: wpPulse 1.4s ease-in-out infinite;
+}
+#wp-marker b { font: 700 0.95rem var(--font-ui); color: var(--paper); font-variant-numeric: tabular-nums; text-shadow: 0 1px 4px #000; }
+#wp-marker span { font: 500 0.7rem var(--font-ui); color: var(--c); letter-spacing: 0.06em; white-space: nowrap; text-shadow: 0 1px 4px #000; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+#wp-marker.edge i { transform: rotate(var(--ang)); clip-path: polygon(0 0, 100% 50%, 0 100%, 25% 50%); width: 22px; height: 22px; border-radius: 0; animation: none; }
+@keyframes wpPulse { 50% { box-shadow: 0 0 22px var(--c), 0 0 0 3px rgba(10, 7, 22, 0.55); } }
+
+#region-card {
+  --accent: var(--pink);
+  position: absolute; left: calc(24px + var(--safe-l)); top: calc(34% + var(--safe-t)); max-width: min(560px, 80vw);
+  opacity: 0; transform: translateX(-24px); transition: opacity 0.6s, transform 0.6s; pointer-events: none;
+}
+#region-card.show { opacity: 1; transform: none; }
+#rc-name {
+  font: 400 clamp(2rem, 5.5vw, 3.6rem)/1 var(--font-display); color: #fff;
+  text-shadow: 0 0 6px var(--accent), 0 0 24px var(--accent), 0 0 48px var(--accent);
+}
+#rc-tag { margin-top: 10px; padding-left: 4px; border-left: 3px solid var(--accent); font: 600 1.05rem var(--font-ui); color: var(--paper); padding-inline-start: 10px; }
+
+#phone {
+  position: absolute; right: calc(20px + var(--safe-r)); top: calc(46% + var(--safe-t)); width: min(300px, 70vw);
+  padding: 12px 14px; background: rgba(22, 15, 46, 0.92); border: 1px solid rgba(41, 231, 255, 0.4); border-radius: 14px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5); pointer-events: auto; animation: slideIn 0.35s ease-out;
+}
+#phone.ringing { border-color: var(--ok); animation: slideIn 0.35s ease-out, ringShake 1.6s 0.4s infinite; }
+@keyframes slideIn { from { transform: translateX(40px); opacity: 0; } }
+@keyframes ringShake { 0%, 20%, 100% { transform: none; } 5%, 15% { transform: rotate(-1.5deg); } 10% { transform: rotate(1.5deg); } }
+.ph-top { display: flex; align-items: center; gap: 8px; font: 700 0.78rem var(--font-ui); letter-spacing: 0.16em; color: var(--cyan); }
+.ph-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+#ph-msg { margin: 6px 0 0; font: 500 0.95rem/1.4 var(--font-ui); color: var(--paper); }
+#ph-actions { display: flex; gap: 8px; margin-top: 10px; }
+#ph-actions button { font-size: 0.85rem; letter-spacing: 0.08em; padding: 8px 14px; }
+#ph-actions button.ghost { text-decoration: none; }
+
+/* ------------------------------------------------------------ map view + journal */
+#mapview { position: fixed; inset: 0; z-index: 6; display: grid; grid-template-columns: 1fr minmax(0, 250px); background: #071427; }
+#bigmap { width: 100%; height: 100%; display: block; cursor: crosshair; min-width: 0; }
+.map-side {
+  display: grid; align-content: start; gap: 10px; padding: calc(18px + var(--safe-t)) max(16px, var(--safe-r)) 18px 16px;
+  background: rgba(22, 15, 46, 0.85); border-left: 1px solid rgba(255, 255, 255, 0.08); overflow-y: auto; min-width: 0;
+}
+.map-side h3 { margin: 0; font: 600 0.78rem var(--font-ui); letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+.map-side p { margin: 0; font: 500 0.8rem/1.5 var(--font-ui); color: var(--muted); }
+#map-legend { display: grid; gap: 4px; }
+#map-legend button {
+  --c: var(--pink);
+  display: flex; align-items: center; gap: 10px; justify-self: stretch; padding: 7px 10px; letter-spacing: 0.02em;
+  font: 600 0.85rem var(--font-ui); color: var(--paper); background: rgba(255, 255, 255, 0.04); border: 1px solid transparent;
+  box-shadow: none; text-align: left; border-radius: 4px;
+}
+#map-legend button:hover { border-color: var(--c); transform: none; box-shadow: none; }
+#map-legend button b { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; border: 2px solid var(--c); color: var(--c); font-size: 0.7rem; }
+
+.journal-panel { max-width: 720px; width: 100%; gap: 16px; }
+.pause-head { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 24px; }
+.pause-head button { justify-self: auto; }
+#journal { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+#journal section { padding: 12px 14px; background: rgba(22, 15, 46, 0.7); border-left: 3px solid var(--cyan); min-width: 0; }
+#journal h3 { margin: 0 0 8px; font: 600 0.75rem var(--font-ui); letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+#journal ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font: 600 0.9rem var(--font-ui); }
+#journal li { display: grid; grid-template-columns: 18px 1fr; gap: 2px 6px; color: var(--muted); }
+#journal li.done { color: var(--ok); }
+#journal li.cur { color: var(--paper); }
+#journal li small { grid-column: 2; font: 500 0.75rem var(--font-ui); color: var(--gold); }
+#journal .regions { display: flex; flex-wrap: wrap; gap: 6px; }
+#journal .regions span { --c: var(--pink); padding: 4px 8px; font: 600 0.8rem var(--font-ui); color: var(--muted); border: 1px dashed rgba(255, 255, 255, 0.2); }
+#journal .regions span.on { color: var(--c); border: 1px solid var(--c); }
+#journal dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font: 600 0.9rem var(--font-ui); font-variant-numeric: tabular-nums; }
+#journal dt { color: var(--muted); }
+#journal dd { margin: 0; text-align: right; }
+#pause { overflow-y: auto; }
+
+@media (max-width: 640px) {
+  #tracker { width: 58vw; padding: 8px 10px; }
+  #tk-title { font-size: 0.9rem; }
+  #notify { top: calc(128px + var(--safe-t)); }
+  #mapview { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+  .map-side { max-height: 34vh; }
+  #phone { top: auto; bottom: calc(190px + var(--safe-b)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #wp-marker i, #phone.ringing { animation: none; }
 }

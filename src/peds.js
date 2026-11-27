@@ -1,14 +1,10 @@
 import { buildHuman, randomLook, animateHuman, poseCower } from './models.js';
-import { blockBounds, NB } from './config.js';
+import { NB } from './config.js';
 import { clamp, rand, randi, dampAngle, pick } from './util.js';
 
-const CORNER_INSET = 2;
-
-function corner(i, j, k) {
-  const b = blockBounds(i, j);
-  const x0 = b.x0 + CORNER_INSET, z0 = b.z0 + CORNER_INSET, x1 = b.x1 - CORNER_INSET, z1 = b.z1 - CORNER_INSET;
-  return [[x0, z0], [x1, z0], [x1, z1], [x0, z1]][k];
-}
+// Pedestrians walk around sidewalk loops ("rings": rectangles). City-block rings know
+// their grid cell and can cross the street to a neighbouring block at corners.
+const ringCorner = (r, k) => [[r.x0, r.z0], [r.x1, r.z0], [r.x1, r.z1], [r.x0, r.z1]][k];
 // crossing options per corner: [di, dj, corner index on the neighbour]
 const CROSS = [
   [[-1, 0, 1], [0, -1, 3]],
@@ -16,6 +12,17 @@ const CROSS = [
   [[1, 0, 3], [0, 1, 1]],
   [[-1, 0, 2], [0, 1, 0]],
 ];
+function ringDist(r, x, z) {
+  const cx = clamp(x, r.x0, r.x1), cz = clamp(z, r.z0, r.z1);
+  const inside = cx === x && cz === z;
+  if (!inside) return Math.hypot(x - cx, z - cz);
+  return Math.min(x - r.x0, r.x1 - x, z - r.z0, r.z1 - z);
+}
+export function nearestRing(G, x, z) {
+  let best = G.world.pedRings[0], bd = Infinity;
+  for (const r of G.world.pedRings) { const d = ringDist(r, x, z); if (d < bd) { bd = d; best = r; } }
+  return best;
+}
 
 export class Ped {
   constructor(G) {
@@ -31,7 +38,7 @@ export class Ped {
     this.timer = 0;
     this.lie = 0;
     this.threatX = 0; this.threatZ = 0;
-    this.i = 0; this.j = 0; this.k = 0; this.dir = 1;
+    this.ring = null; this.k = 0; this.dir = 1;
     this.tx = 0; this.tz = 0;
     this.crossing = false;
     this.hp = 100;
@@ -67,11 +74,11 @@ export class Ped {
     this.timer = t;
   }
 
-  spawnAt(i, j) {
-    this.i = i; this.j = j;
+  spawnAt(ring) {
+    this.ring = ring;
     this.k = randi(0, 3);
     this.dir = Math.random() < 0.5 ? 1 : -1;
-    const a = corner(i, j, this.k), b = corner(i, j, (this.k + this.dir + 4) % 4);
+    const a = ringCorner(ring, this.k), b = ringCorner(ring, (this.k + this.dir + 4) % 4);
     const t = Math.random();
     this.x = a[0] + (b[0] - a[0]) * t;
     this.z = a[1] + (b[1] - a[1]) * t;
@@ -82,6 +89,8 @@ export class Ped {
     this.crossing = false;
     this.hp = 100;
     this.out = false;
+    this.parked = false;
+    this.retryT = 0;
     this.vx = this.vz = this.vy = 0;
     this.y = this.G.world.groundY(this.x, this.z);
     this.model.root.rotation.set(0, 0, 0);
@@ -90,15 +99,17 @@ export class Ped {
   }
 
   nextTarget() {
-    if (!this.crossing && Math.random() < 0.3) {
+    const r = this.ring;
+    if (!this.crossing && r.i !== undefined && Math.random() < 0.3) {
       const opts = CROSS[this.k].filter(([di, dj]) => {
-        const ni = this.i + di, nj = this.j + dj;
+        const ni = r.i + di, nj = r.j + dj;
         return ni >= 0 && nj >= 0 && ni < NB && nj < NB;
       });
       if (opts.length) {
         const [di, dj, nk] = pick(opts);
-        this.i += di; this.j += dj; this.k = nk;
-        [this.tx, this.tz] = corner(this.i, this.j, this.k);
+        this.ring = this.G.world.pedRings[(r.i + di) * NB + (r.j + dj)];
+        this.k = nk;
+        [this.tx, this.tz] = ringCorner(this.ring, this.k);
         this.crossing = true;
         return;
       }
@@ -106,7 +117,7 @@ export class Ped {
     this.crossing = false;
     if (Math.random() < 0.15) this.dir = -this.dir;
     this.k = (this.k + this.dir + 4) % 4;
-    [this.tx, this.tz] = corner(this.i, this.j, this.k);
+    [this.tx, this.tz] = ringCorner(this.ring, this.k);
   }
 
   knock(vx, vz, up = 3, byPlayer = true) {
@@ -130,23 +141,15 @@ export class Ped {
   }
 
   resumeWalk() {
-    const W = this.G.world;
-    const blk = W.blockAt(this.x, this.z);
-    let i, j;
-    if (blk) { i = blk.i; j = blk.j; }
-    else {
-      i = clamp(Math.floor((this.x + 280) / 80), 0, NB - 1);
-      j = clamp(Math.floor((this.z + 280) / 80), 0, NB - 1);
-    }
-    this.i = i; this.j = j;
+    this.ring = nearestRing(this.G, this.x, this.z);
     let best = 0, bd = Infinity;
     for (let k = 0; k < 4; k++) {
-      const c = corner(i, j, k);
+      const c = ringCorner(this.ring, k);
       const d = Math.hypot(c[0] - this.x, c[1] - this.z);
       if (d < bd) { bd = d; best = k; }
     }
     this.k = best;
-    [this.tx, this.tz] = corner(i, j, best);
+    [this.tx, this.tz] = ringCorner(this.ring, best);
     this.state = 'walk';
     this.crossing = true; // may need to cross a road to get back
   }
@@ -190,13 +193,15 @@ export class Ped {
     }
 
     const nx = this.x + this.vx * dt, nz = this.z + this.vz * dt;
-    if (W.isLand(nx, nz)) { this.x = nx; this.z = nz; }
-    else { this.vx = -this.vx; this.vz = -this.vz; }
+    if (W.isLand(nx, nz) && W.groundY(nx, nz) - this.y < 0.6) { this.x = nx; this.z = nz; }
+    else { this.vx = -this.vx; this.vz = -this.vz; if (this.state === 'flee') { this.threatX = this.x + this.vx; this.threatZ = this.z + this.vz; } }
     const hit = G.circleVsBoxes(W.colliders, this.x, this.z, 0.35);
     if (hit) {
       this.x += hit.nx * hit.pen; this.z += hit.nz * hit.pen;
-      if (this.state === 'flee') this.threatX = this.x - hit.nz * 10, this.threatZ = this.z + hit.nx * 10;
+      if (this.state === 'flee') { this.threatX = this.x - hit.nz * 10; this.threatZ = this.z + hit.nx * 10; }
     }
+    if (W.isLand(this.x, this.z)) { this.landX = this.x; this.landZ = this.z; }
+    else if (this.landX !== undefined) { this.x = this.landX; this.z = this.landZ; }
     const g = W.groundY(this.x, this.z);
     if (this.y > g || this.vy > 0) {
       this.vy -= 20 * dt;
@@ -234,6 +239,8 @@ export class Ped {
 export function updatePeds(G, dt) {
   const P = G.player.outdoorPos;
   for (const p of G.peds) {
+    if (p.retryT > 0) { p.retryT -= dt; continue; }
+    if (p.parked) { p.parked = false; respawnPed(G, p); continue; }
     const d = Math.hypot(p.x - P.x, p.z - P.z);
     if (d > 150) { respawnPed(G, p); continue; }
     p.model.root.visible = d < 130;
@@ -241,22 +248,26 @@ export function updatePeds(G, dt) {
   }
 }
 
+const ringCap = (r) => Math.max(2, Math.round((2 * (r.x1 - r.x0 + r.z1 - r.z0)) / 22));
 export function respawnPed(G, p, near = false) {
   const P = G.player.outdoorPos;
   const fx = Math.sin(G.cam.yaw), fz = Math.cos(G.cam.yaw);
-  for (let tries = 0; tries < 12; tries++) {
-    const i = randi(0, NB - 1), j = randi(0, NB - 1);
-    const b = blockBounds(i, j);
-    const dx = b.cx - P.x, dz = b.cz - P.z;
-    const d = Math.hypot(dx, dz);
-    const minD = near ? 0 : 55;
-    if (d < minD || d > 125) continue;
+  const rings = G.world.pedRings;
+  if (p.retryT > 0) return;
+  for (let tries = 0; tries < 16; tries++) {
+    const r = rings[Math.floor(Math.random() * rings.length)];
+    if (r !== p.ring && G.peds.filter((o) => o.ring === r).length >= ringCap(r)) continue;
+    if (ringDist(r, P.x, P.z) > 125) continue;
+    p.spawnAt(r);
+    const dx = p.x - P.x, dz = p.z - P.z, d = Math.hypot(dx, dz) || 0.1;
+    if (d > 125 || (!near && d < 35)) continue;
     if (!near && (dx * fx + dz * fz) / d > 0.4 && d < 90) continue; // avoid popping in right in front
-    p.spawnAt(i, j);
     return;
   }
-  const blk = G.world.blockAt(P.x, P.z) || G.world.blocks[24];
-  p.spawnAt(blk.i, blk.j);
+  // nowhere suitable nearby (open country, or every loop is full): wait out of sight
+  p.retryT = 2 + Math.random() * 2;
+  p.parked = true;
+  p.model.root.visible = false;
 }
 
 // Knock pedestrians (and the player on foot) aside when a car hits them.

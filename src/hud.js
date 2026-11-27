@@ -1,9 +1,17 @@
 import { LAND, PIER, HALF, ROAD, NB, PITCH, blockBounds } from './config.js';
+import { WORLD, regionAt } from './layout.js';
 import { fmtMoney } from './util.js';
 import { WEAPONS, ORDER } from './weapons.js';
 
-// Neighbourhood names shown when you cross into a new part of the island.
-function districtAt(x, z) {
+const MX0 = WORLD.minX, MZ0 = WORLD.minZ, MX1 = WORLD.maxX, MZ1 = WORLD.maxZ;
+const $ = (id) => document.getElementById(id);
+
+// Neighbourhood names shown when you cross into a new part of the coast.
+export function districtAt(W, x, z) {
+  const b = W.bridgeAt?.(x, z);
+  if (b) return b.name;
+  const r = regionAt(x, z);
+  if (r) return r.name;
   if (x > PIER.minX - 2 && Math.abs(z) < 8) return 'Old Pier';
   if (x > HALF + ROAD / 2) return 'Solano Beach';
   if (x < -HALF - ROAD / 2 || z < -HALF - ROAD / 2 || z > HALF + ROAD / 2) return 'Greenbelt';
@@ -15,10 +23,6 @@ function districtAt(x, z) {
   if (i <= 0) return 'Westside';
   return 'Midtown';
 }
-
-const MX0 = LAND.minX - 40, MZ0 = LAND.minZ - 40, MX1 = PIER.maxX + 30, MZ1 = LAND.maxZ + 40;
-
-const $ = (id) => document.getElementById(id);
 
 export class HUD {
   constructor(G) {
@@ -33,15 +37,12 @@ export class HUD {
       armor: $('armor'), armorFill: $('armor').firstElementChild, pops: $('money-pops'), bag: $('bag'), bagVal: $('bag-val'),
       hold: $('holdbar'), holdFill: $('holdbar').querySelector('i'), holdLabel: $('holdbar').querySelector('span'),
       place: $('place'), nitro: $('nitro'), nitroFill: $('nitro').firstElementChild, dmgDir: $('dmg-dir'),
+      card: $('region-card'), cardName: $('rc-name'), cardTag: $('rc-tag'), mapview: $('mapview'), legend: $('map-legend'),
     };
-    this.el.wSlots.innerHTML = ORDER.map((id) => `<span data-id="${id}">${WEAPONS[id].slot}</span>`).join('');
-    this.slotEls = [...this.el.wSlots.children];
-    this.hitT = 0;
-    this.placeT = 0;
-    this.district = '';
-    this.dmgT = 0;
     this.el.stars.innerHTML = '<span>★</span>'.repeat(5);
     this.starEls = [...this.el.stars.children];
+    this.el.wSlots.innerHTML = ORDER.map((id) => `<span data-id="${id}">${WEAPONS[id].slot}</span>`).join('');
+    this.slotEls = [...this.el.wSlots.children];
     this.mini = $('minimap');
     this.mctx = this.mini.getContext('2d');
     this.bigmap = $('bigmap');
@@ -50,19 +51,30 @@ export class HUD {
     this.notifyT = 0;
     this.bigT = 0;
     this.radioT = 0;
+    this.placeT = 0;
+    this.cardT = 0;
     this.lastStars = -1;
     this.mapOpen = false;
+    this.district = '';
     this.buildMap();
+    this.bigmap.addEventListener('click', (e) => this.onMapClick(e));
   }
 
-  // Pre-render the island to an offscreen canvas at 1px per metre.
+  // ------------------------------------------------------------ map image (1 px per metre)
   buildMap() {
     const W = this.G.world;
     const c = document.createElement('canvas');
     c.width = MX1 - MX0; c.height = MZ1 - MZ0;
     const g = c.getContext('2d');
     const R = (x0, z0, x1, z1, col) => { g.fillStyle = col; g.fillRect(x0 - MX0, z0 - MZ0, x1 - x0, z1 - z0); };
+    const poly = (pts) => { pts.forEach(([x, z], k) => (k ? g.lineTo(x - MX0, z - MZ0) : g.moveTo(x - MX0, z - MZ0))); g.closePath(); };
     R(MX0, MZ0, MX1, MZ1, '#0b1f3a');
+    // shallows hint
+    g.strokeStyle = '#123259';
+    g.lineWidth = 26;
+    g.lineJoin = 'round';
+    g.strokeRect(LAND.minX - MX0, LAND.minZ - MZ0, LAND.maxX - LAND.minX, LAND.maxZ - LAND.minZ);
+    // the city island
     R(LAND.minX, LAND.minZ, LAND.maxX, LAND.maxZ, '#e5cf94');
     R(LAND.minX, LAND.minZ, HALF + ROAD / 2, LAND.maxZ, '#2f6b3a');
     R(PIER.minX, PIER.minZ, PIER.maxX, PIER.maxZ, '#9a7a52');
@@ -75,8 +87,52 @@ export class HUD {
       if (blk.type === 'park') R(b.x0 + 4, b.z0 + 4, b.x1 - 4, b.z1 - 4, '#2f8a4a');
       if (blk.type === 'parking') R(b.x0 + 4, b.z0 + 4, b.x1 - 4, b.z1 - 4, '#2a2e3a');
     }
+    // coast land masses
+    const TOP = { grass: '#336f3c', concrete: '#4a4f5c', sand: '#e5cf94' };
+    for (const L of W.lands || []) {
+      g.fillStyle = '#e5cf94';
+      g.beginPath(); poly(L.outer); g.fill();
+      g.fillStyle = TOP[L.top];
+      g.beginPath(); poly(L.outer); for (const h of L.holes) poly(h); g.fill('evenodd');
+      g.fillStyle = '#0b1f3a';
+      for (const h of L.holes) { g.beginPath(); poly(h); g.fill(); }
+    }
+    // Sundown Bluffs: hillshaded height tint
+    const T = W.terrain;
+    if (T) {
+      const t = document.createElement('canvas');
+      t.width = T.nx; t.height = T.nz;
+      const tg = t.getContext('2d');
+      const img = tg.createImageData(T.nx, T.nz);
+      for (let j = 0; j < T.nz; j++) for (let i = 0; i < T.nx; i++) {
+        const h = T.grid[j * T.nx + i];
+        const k = (j * T.nx + i) * 4;
+        if (h < -0.6) { img.data[k + 3] = 0; continue; }
+        const l = Math.min(1, Math.max(0, h / 34));
+        const shade = i > 0 && j > 0 ? (T.grid[j * T.nx + i] - T.grid[(j - 1) * T.nx + i - 1]) * 20 : 0;
+        const r = h < 0.7 ? 229 : 47 + l * 120, gg = h < 0.7 ? 207 : 107 + l * 60, b = h < 0.7 ? 148 : 58 + l * 50;
+        img.data[k] = Math.max(0, Math.min(255, r + shade));
+        img.data[k + 1] = Math.max(0, Math.min(255, gg + shade));
+        img.data[k + 2] = Math.max(0, Math.min(255, b + shade));
+        img.data[k + 3] = 255;
+      }
+      tg.putImageData(img, 0, 0);
+      g.drawImage(t, -846 - MX0, -344 - MZ0, T.nx * 2, T.nz * 2);
+    }
+    // coast roads and bridges
+    g.lineCap = 'round';
+    for (const b of W.bridges || []) {
+      g.strokeStyle = '#9aa3b5';
+      g.lineWidth = b.width + 4;
+      g.beginPath(); poly(b.points); g.stroke();
+    }
+    for (const e of W.edges) {
+      if (e.city) continue;
+      g.strokeStyle = '#1c1f29';
+      g.lineWidth = e.w;
+      g.beginPath(); g.moveTo(e.ax - MX0, e.az - MZ0); g.lineTo(e.bx - MX0, e.bz - MZ0); g.stroke();
+    }
     for (const b of W.colliders.list) R(b.minX, b.minZ, b.maxX, b.maxZ, b.h > 40 ? '#7a82a3' : '#5c637d');
-    g.fillStyle = '#ff8a3d';
     for (const r of W.ramps) R(r.x - 3, Math.min(r.z, r.z + r.dz * r.len), r.x + 3, Math.max(r.z, r.z + r.dz * r.len), '#ff8a3d');
     this.map = c;
   }
@@ -179,6 +235,18 @@ export class HUD {
     this.el.place.classList.add('show');
     this.placeT = 3;
   }
+  // big title card when arriving in a new region
+  regionCard(region, discovered) {
+    this.el.cardName.textContent = region.name;
+    this.el.cardTag.textContent = discovered ? `${region.tag} · New area +$250` : region.tag;
+    this.el.card.style.setProperty('--accent', region.color);
+    this.el.card.classList.remove('show');
+    void this.el.card.offsetWidth;
+    this.el.card.classList.add('show');
+    this.cardT = 4.5;
+    this.el.place.classList.remove('show');
+    this.placeT = 0;
+  }
   prompt(text) {
     if (this._prompt === text) return;
     this._prompt = text;
@@ -215,16 +283,16 @@ export class HUD {
     el.armorFill.style.width = `${Math.max(0, G.player.armor)}%`;
     this.updateWeapon();
     if (this.placeT > 0) { this.placeT -= dt; if (this.placeT <= 0) el.place.classList.remove('show'); }
+    if (this.cardT > 0) { this.cardT -= dt; if (this.cardT <= 0) el.card.classList.remove('show'); }
     if (!this.inside) {
       const P = G.player.pos;
-      const d = districtAt(P.x, P.z);
+      const d = districtAt(G.world, P.x, P.z);
       if (d !== this.district) { if (this.district) this.showPlace(d); this.district = d; }
     }
     if (this.notifyT > 0) { this.notifyT -= dt; if (this.notifyT <= 0) el.notify.classList.remove('show'); }
     if (this.bigT > 0) { this.bigT -= dt; if (this.bigT <= 0) el.big.classList.remove('show'); }
     if (this.radioT > 0) { this.radioT -= dt; if (this.radioT <= 0) el.radio.classList.remove('show'); }
     this.drawMinimap();
-    if (this.mapOpen) this.drawBigMap();
   }
 
   updateWeapon() {
@@ -254,6 +322,7 @@ export class HUD {
     const t = G.time;
     for (const v of G.wanted.police) out.push({ x: v.x, z: v.z, kind: 'police', color: Math.floor(t * 4) % 2 ? '#ff3355' : '#3a7bff' });
     for (const n of G.npcs) if (n.isCop && !n.dead && n.space === G.world) out.push({ x: n.x, z: n.z, kind: 'cop', color: '#ff6677' });
+    for (const n of G.npcs) if (n.role === 'guard' && n.hostile && !n.dead && n.space === G.world) out.push({ x: n.x, z: n.z, kind: 'cop', color: '#ffb347' });
     if (G.wanted.heli) out.push({ x: G.wanted.heli.x, z: G.wanted.heli.z, kind: 'heli', color: '#ff3355' });
     const mt = G.missions.targetPos();
     if (mt) out.push({ x: mt.x, z: mt.z, kind: 'target', color: '#ffd23f', edge: true });
@@ -262,6 +331,8 @@ export class HUD {
       out.push({ x: H.boatMarker.x, z: H.boatMarker.z, kind: 'target', color: '#ffd23f', edge: true });
       out.push({ x: H.lockupMarker.x, z: H.lockupMarker.z, kind: 'target', color: '#29e7ff', edge: true });
     }
+    const wp = G.gps.waypoint;
+    if (wp) out.push({ x: wp.x, z: wp.z, kind: 'target', color: '#ff3fa4', edge: true });
     const c = G.missions.contactPos();
     if (c) out.push({ x: c.x, z: c.z, kind: 'contact', color: '#4dd2ff', edge: true, label: 'D' });
     const S = G.world.specials, D = G.world.doors;
@@ -281,6 +352,22 @@ export class HUD {
     return out;
   }
 
+  drawRoute(g, ox, oz, scale) {
+    const R = this.G.gps.remaining;
+    if (!R || R.length < 2) return;
+    g.save();
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    g.beginPath();
+    R.forEach((p, k) => (k ? g.lineTo((p.x - ox) * scale, (p.z - oz) * scale) : g.moveTo((p.x - ox) * scale, (p.z - oz) * scale)));
+    g.strokeStyle = 'rgba(10,7,22,0.85)';
+    g.lineWidth = 7;
+    g.stroke();
+    g.strokeStyle = this.G.gps.color;
+    g.lineWidth = 4;
+    g.stroke();
+    g.restore();
+  }
+
   drawMinimap() {
     const G = this.G, g = this.mctx, cv = this.mini;
     const size = cv.width, c = size / 2;
@@ -289,7 +376,7 @@ export class HUD {
     const fx = Math.sin(yaw), fz = Math.cos(yaw);
     const rot = -Math.PI / 2 - Math.atan2(fz, fx);
     const v = G.player.vehicle;
-    const zoom = (v ? 1.45 - Math.min(0.6, v.speed / 70) : 1.9) * (size / 220);
+    const zoom = (v ? 1.45 - Math.min(0.75, v.speed / 60) : 1.9) * (size / 220);
     g.save();
     g.clearRect(0, 0, size, size);
     g.beginPath();
@@ -300,7 +387,18 @@ export class HUD {
     g.translate(c, c);
     g.rotate(rot);
     g.scale(zoom, zoom);
-    g.drawImage(this.map, -(P.x - MX0), -(P.z - MZ0));
+    // draw only the part of the island image around the player
+    const half = Math.ceil((c / zoom) * 1.5);
+    let sx = Math.round(P.x - MX0 - half), sy = Math.round(P.z - MZ0 - half), sw = half * 2, sh = half * 2;
+    if (sx < 0) { sw += sx; sx = 0; }
+    if (sy < 0) { sh += sy; sy = 0; }
+    sw = Math.min(sw, this.map.width - sx); sh = Math.min(sh, this.map.height - sy);
+    if (sw > 0 && sh > 0) g.drawImage(this.map, sx, sy, sw, sh, sx - (P.x - MX0), sy - (P.z - MZ0), sw, sh);
+    g.restore();
+    g.save();
+    g.translate(c, c);
+    g.rotate(rot);
+    this.drawRoute(g, P.x, P.z, zoom);
     g.restore();
 
     const cr = Math.cos(rot), sr = Math.sin(rot);
@@ -349,8 +447,8 @@ export class HUD {
     g.stroke();
   }
 
-  blip(g, x, y, b) {
-    const s = this.mini.width / 220;
+  blip(g, x, y, b, scale = this.mini.width / 220) {
+    const s = scale;
     g.save();
     g.translate(x, y);
     if (b.kind === 'police' || b.kind === 'heli' || b.kind === 'cop') {
@@ -374,26 +472,80 @@ export class HUD {
     g.restore();
   }
 
+  // ------------------------------------------------------------ full map
   toggleMap(force) {
+    const G = this.G;
     this.mapOpen = force ?? !this.mapOpen;
-    this.bigmap.hidden = !this.mapOpen;
-    if (this.mapOpen) this.drawBigMap();
+    this.el.mapview.hidden = !this.mapOpen;
+    if (this.mapOpen) {
+      G.input.release();
+      this.buildLegend();
+      this.drawBigMap();
+    } else {
+      G.input.reset();
+      G.input.requestLock();
+    }
+  }
+
+  buildLegend() {
+    const G = this.G;
+    this.el.legend.innerHTML = G.guide.destinations().map((d, i) => `<button type="button" data-i="${i}" style="--c:${d.color}"><b>${d.glyph}</b>${d.label}</button>`).join('');
+    this.el.legend.onclick = (e) => {
+      const b = e.target.closest('button[data-i]');
+      if (!b) return;
+      const d = G.guide.destinations()[+b.dataset.i];
+      G.gps.setWaypoint(d.x, d.z, d.label);
+      G.audio.click();
+      this.drawBigMap();
+    };
+  }
+
+  onMapClick(e) {
+    const T = this.mapT;
+    if (!T) return;
+    const r = this.bigmap.getBoundingClientRect();
+    const px = (e.clientX - r.left) * T.dpr, py = (e.clientY - r.top) * T.dpr;
+    const x = (px - T.ox) / T.s + MX0, z = (py - T.oy) / T.s + MZ0;
+    if (x < MX0 || x > MX1 || z < MZ0 || z > MZ1) return;
+    const wp = this.G.gps.waypoint;
+    if (wp && Math.hypot(wp.x - x, wp.z - z) < 30 / T.s * T.dpr + 20) this.G.gps.clearWaypoint();
+    else this.G.gps.setWaypoint(x, z, 'Map waypoint');
+    this.G.audio.click();
+    this.drawBigMap();
   }
 
   drawBigMap() {
     const cv = this.bigmap, g = this.bctx;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const w = Math.round(cv.clientWidth * dpr), h = Math.round(cv.clientHeight * dpr);
+    if (!w || !h) return;
     if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
     g.fillStyle = '#071427';
     g.fillRect(0, 0, w, h);
-    const s = Math.min(w / this.map.width, (h * 0.86) / this.map.height);
-    const ox = (w - this.map.width * s) / 2, oy = (h - this.map.height * s) / 2 + h * 0.03;
+    const s = Math.min((w * 0.98) / this.map.width, (h * 0.9) / this.map.height);
+    const ox = (w - this.map.width * s) / 2, oy = (h - this.map.height * s) / 2 + h * 0.035;
+    this.mapT = { ox, oy, s, dpr };
     g.imageSmoothingEnabled = true;
     g.drawImage(this.map, ox, oy, this.map.width * s, this.map.height * s);
+    g.save();
+    g.translate(ox - MX0 * s, oy - MZ0 * s);
+    this.drawRoute(g, 0, 0, s);
+    g.restore();
     const toMap = (x, z) => [ox + (x - MX0) * s, oy + (z - MZ0) * s];
-    for (const b of this.blips()) { const [x, y] = toMap(b.x, b.z); this.blip(g, x, y, b); }
-    const G = this.G, P = G.player.outdoorPos;
+    const G = this.G;
+    // region labels
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = `700 ${Math.round(13 * dpr)}px "Chakra Petch", sans-serif`;
+    for (const r of G.guide.regionsInfo()) {
+      const [x, y] = toMap(r.at[0], r.at[1]);
+      g.fillStyle = 'rgba(7,20,39,0.65)';
+      const tw = g.measureText(r.name.toUpperCase()).width + 16 * dpr;
+      g.fillRect(x - tw / 2, y - 11 * dpr, tw, 22 * dpr);
+      g.fillStyle = r.visited ? r.color : '#a9b4d0';
+      g.fillText(r.name.toUpperCase(), x, y);
+    }
+    for (const b of this.blips()) { const [x, y] = toMap(b.x, b.z); this.blip(g, x, y, b, dpr * 0.9); }
+    const P = G.player.outdoorPos;
     const [px, py] = toMap(P.x, P.z);
     const ph = G.player.vehicle ? G.player.vehicle.h : G.player.h;
     g.save();
@@ -405,9 +557,10 @@ export class HUD {
     g.fillStyle = '#ffffff';
     g.font = `700 ${Math.round(22 * dpr)}px "Chakra Petch", sans-serif`;
     g.textAlign = 'left'; g.textBaseline = 'top';
-    g.fillText('PORT SOLANO', 24 * dpr, 20 * dpr);
+    g.fillText('PORT SOLANO COAST', 24 * dpr, 18 * dpr);
     g.font = `500 ${Math.round(13 * dpr)}px "Chakra Petch", sans-serif`;
     g.fillStyle = '#a9b4d0';
-    g.fillText('D Dex   B Solano Bank   G Iron Palm Arms   M Late Mart   A Neon Arcade   H Safehouse   P Customs   L Lockup   + Hospital   ★ Police   ■ Car', 24 * dpr, 50 * dpr);
+    const gps = G.gps;
+    g.fillText(gps.waypoint ? `Route set: ${gps.waypoint.label} · click it again to clear` : 'Click anywhere to set a waypoint · M or Esc to close', 24 * dpr, 48 * dpr);
   }
 }

@@ -206,3 +206,35 @@ export function ringTexture() {
   g.fill();
   return tex(c, true, false);
 }
+
+// Green highway-style sign. rows: [{ text, arrow: 'up' | 'left' | 'right' | null, small }]
+export function roadSignTexture(rows, bg = '#11643a') {
+  const W = 512, rowH = 96, H = rows.length * rowH + 24;
+  const [c, g] = canvas(W, H);
+  g.fillStyle = bg;
+  g.fillRect(0, 0, W, H);
+  g.strokeStyle = '#f4f4f4';
+  g.lineWidth = 6;
+  g.strokeRect(8, 8, W - 16, H - 16);
+  rows.forEach((r, k) => {
+    const cy = 12 + rowH * k + rowH / 2;
+    g.fillStyle = '#f4f4f4';
+    g.font = `700 ${r.small ? 34 : 48}px "Chakra Petch", "Trebuchet MS", sans-serif`;
+    g.textBaseline = 'middle';
+    g.textAlign = 'left';
+    g.fillText(r.text, r.arrow ? 108 : 32, cy + 2);
+    if (r.arrow) {
+      g.save();
+      g.translate(60, cy);
+      g.rotate({ up: 0, right: Math.PI / 2, left: -Math.PI / 2 }[r.arrow]);
+      g.beginPath();
+      g.moveTo(0, -30); g.lineTo(22, -4); g.lineTo(8, -4); g.lineTo(8, 28); g.lineTo(-8, 28); g.lineTo(-8, -4); g.lineTo(-22, -4);
+      g.closePath();
+      g.fill();
+      g.restore();
+    }
+  });
+  const t = tex(c, true, false);
+  t.userData = { aspect: W / H };
+  return t;
+}

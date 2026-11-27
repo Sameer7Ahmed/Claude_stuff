@@ -9,6 +9,8 @@ import {
   decoFacade, glassFacade, sidewalkTexture, noiseTexture, asphaltTexture, signTexture, radialTexture,
 } from './textures.js';
 import { palmGeometries, buildBoat, MAT } from './models.js';
+import { BRIDGES, ROADS, segDist } from './layout.js';
+import { buildRegions } from './regions.js';
 
 // --------------------------------------------------------------- colliders
 // Axis-aligned boxes in a uniform grid. Boxes carry a vertical extent (y0..y1)
@@ -130,6 +132,34 @@ export function buildWorld(scene, quality) {
   const lotGeos = [];
   const palmSpots = [];
   const lampSpots = [];         // {x, z, rot}
+
+  // keep beach props and palms off the new bridges and the roads that lead to them
+  const corridors = [];
+  for (const b of BRIDGES) for (let k = 0; k + 1 < b.points.length; k++) corridors.push([...b.points[k], ...b.points[k + 1], b.width / 2 + 3]);
+  for (const [a, b, w] of ROADS.edges) {
+    if (!a.startsWith('g:')) continue;
+    const [gi, gj] = a.slice(2).split(',').map(Number);
+    corridors.push([roadPos(gi), roadPos(gj), ...ROADS.nodes[b], w / 2 + 3]);
+  }
+  const inCorridor = (x, z, pad = 0) => corridors.some(([ax, az, bx, bz, hw]) => segDist(x, z, ax, az, bx, bz).d < hw + pad);
+  W.windowMats = [];
+
+  // a facade box with window UVs scaled to its size (also used by the coast regions)
+  function facadeGeometry(w, h, d, cx, cz, tint, f, y0 = 0) {
+    const g = new THREE.BoxGeometry(w, h, d);
+    const uv = g.attributes.uv;
+    for (let face = 0; face < 6; face++) {
+      for (let k = 0; k < 4; k++) {
+        const i = face * 4 + k;
+        if (face === 2 || face === 3) { uv.setXY(i, f.roofUV[0], f.roofUV[1]); continue; }
+        const faceW = face < 2 ? d : w;
+        uv.setXY(i, uv.getX(i) * Math.max(1, Math.round(faceW / f.tileW * 4) / 4), uv.getY(i) * (h / f.tileH));
+      }
+    }
+    g.translate(cx, y0 + h / 2, cz);
+    return colorize(g, tint);
+  }
+  W.facadeGeometry = facadeGeometry;
 
   function addBuilding(x0, z0, x1, z1, h, setIdx, tint, opts = {}) {
     const set = facadeSets[setIdx];
@@ -541,6 +571,7 @@ export function buildWorld(scene, quality) {
     if (Math.abs(z) < 16) continue;
     // keep the run-ups and landing zones of ramps clear
     if (rampDefs.some((r) => Math.abs(x - r.x) < 10 && Math.abs(z - r.z) < 70)) continue;
+    if (inCorridor(x, z, 3)) continue;
     const col = umbrellaColors[k % umbrellaColors.length];
     umbrellaGeos.push(
       colorize(new THREE.ConeGeometry(1.6, 0.7, 10).translate(x, 2.4, z), col),
@@ -601,11 +632,14 @@ export function buildWorld(scene, quality) {
 
   // ------------------------------------------------ palms (instanced)
   const pg = palmGeometries();
-  const trunkMesh = new THREE.InstancedMesh(pg.trunk, MAT.vc, palmSpots.length);
+  const palmsKept = palmSpots.filter(([x, , z]) => !inCorridor(x, z, 2));
+  const trunkMesh = new THREE.InstancedMesh(pg.trunk, MAT.vc, palmsKept.length);
   const leafMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide });
-  const crownMesh = new THREE.InstancedMesh(pg.crown, leafMat, palmSpots.length);
+  W.palmGeo = pg;
+  W.leafMat = leafMat;
+  const crownMesh = new THREE.InstancedMesh(pg.crown, leafMat, palmsKept.length);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
-  palmSpots.forEach(([x, y, z, r], idx) => {
+  palmsKept.forEach(([x, y, z, r], idx) => {
     q.setFromAxisAngle(up, r * Math.PI * 2);
     const s = 0.8 + r * 0.6;
     sc.set(s, s, s);
@@ -647,25 +681,118 @@ export function buildWorld(scene, quality) {
   W.lampHeadMat = headMat;
   W.lampPoolMat = poolMat;
   W.lampSpots = lampSpots;
+  W.lampGeo = { poleGeo, headGeo, poolGeo };
+  W.facades = facadeSets.map((s) => s.f);
 
-  // ------------------------------------------------ road graph
+  // ------------------------------------------------ road graph (city grid + coast roads)
   const nodes = [];
-  for (let i = 0; i <= NB; i++) for (let j = 0; j <= NB; j++) nodes.push({ i, j, x: roadPos(i), z: roadPos(j), id: i * (NB + 1) + j });
-  for (const n of nodes) {
-    n.nb = [];
-    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const a = n.i + di, b = n.j + dj;
-      if (a >= 0 && a <= NB && b >= 0 && b <= NB) n.nb.push(a * (NB + 1) + b);
-    }
+  for (let i = 0; i <= NB; i++) for (let j = 0; j <= NB; j++) nodes.push({ i, j, x: roadPos(i), z: roadPos(j), id: i * (NB + 1) + j, nb: [], city: true });
+  const edgeW = new Map();
+  const ek = (a, b) => (a < b ? a * 4096 + b : b * 4096 + a);
+  const link = (a, b, w) => { nodes[a].nb.push(b); nodes[b].nb.push(a); edgeW.set(ek(a, b), w); };
+  for (let i = 0; i <= NB; i++) for (let j = 0; j <= NB; j++) {
+    const id = i * (NB + 1) + j;
+    if (i < NB) link(id, id + NB + 1, ROAD);
+    if (j < NB) link(id, id + 1, ROAD);
   }
-  W.nodes = nodes;
-  W.nearestNode = (x, z) => {
-    const i = clamp(Math.round((x + HALF) / PITCH), 0, NB), j = clamp(Math.round((z + HALF) / PITCH), 0, NB);
+  const keyId = {};
+  for (const [k, [x, z]] of Object.entries(ROADS.nodes)) {
+    keyId[k] = nodes.length;
+    nodes.push({ x, z, id: nodes.length, nb: [], key: k, city: false });
+  }
+  const idOf = (k) => {
+    if (!k.startsWith('g:')) return keyId[k];
+    const [i, j] = k.slice(2).split(',').map(Number);
     return i * (NB + 1) + j;
   };
+  for (const [a, b, w] of ROADS.edges) link(idOf(a), idOf(b), w);
+  W.nodes = nodes;
+  W.nodeId = idOf;
+  W.edges = [];
+  for (const n of nodes) {
+    for (const m of n.nb) {
+      if (m < n.id) continue;
+      const o = nodes[m], w = edgeW.get(ek(n.id, m));
+      W.edges.push({
+        a: n.id, b: m, w, ax: n.x, az: n.z, bx: o.x, bz: o.z, len: Math.hypot(o.x - n.x, o.z - n.z), city: n.city && o.city,
+        minX: Math.min(n.x, o.x) - w, maxX: Math.max(n.x, o.x) + w, minZ: Math.min(n.z, o.z) - w, maxZ: Math.max(n.z, o.z) + w,
+      });
+    }
+  }
+  W.edgeWidth = (a, b) => edgeW.get(ek(a, b)) ?? ROAD;
+  W.laneOf = (a, b) => W.edgeWidth(a, b) * 0.225;
+  W.nearestNode = (x, z) => {
+    let best = 0, bd = Infinity;
+    for (const n of nodes) { const d = (n.x - x) ** 2 + (n.z - z) ** 2; if (d < bd) { bd = d; best = n.id; } }
+    return best;
+  };
+  W.nearestEdge = (x, z, needSight = false) => {
+    const cand = [];
+    for (const e of W.edges) {
+      const r = segDist(x, z, e.ax, e.az, e.bx, e.bz);
+      cand.push({ e, d: r.d, t: r.t, px: r.px, pz: r.pz });
+    }
+    cand.sort((a, b) => a.d - b.d);
+    if (needSight) {
+      for (const c of cand.slice(0, 8)) if (c.d < 4 || !W.colliders.lineBlocked(x, z, c.px, c.pz, 2)) return c;
+    }
+    return cand[0] || null;
+  };
+  // Dijkstra from one node (or seeded [[id, cost]] list) across the whole graph
+  W.dijkstra = (from) => {
+    const n = nodes.length;
+    const dist = new Float64Array(n).fill(Infinity), prev = new Int32Array(n).fill(-1), done = new Uint8Array(n);
+    if (Array.isArray(from)) for (const [id, c] of from) dist[id] = Math.min(dist[id], c);
+    else dist[from] = 0;
+    for (;;) {
+      let u = -1, bd = Infinity;
+      for (let i = 0; i < n; i++) if (!done[i] && dist[i] < bd) { bd = dist[i]; u = i; }
+      if (u < 0) break;
+      done[u] = 1;
+      const nu = nodes[u];
+      for (const v of nu.nb) {
+        const nv = nodes[v];
+        const c = bd + Math.hypot(nv.x - nu.x, nv.z - nu.z);
+        if (c < dist[v]) { dist[v] = c; prev[v] = u; }
+      }
+    }
+    return { dist, prev };
+  };
+  // next node on the shortest path from `from` toward `to` (cached per target for pursuit)
+  const hopCache = new Map();
+  W.nextHop = (from, to) => {
+    const now = performance.now();
+    let c = hopCache.get(to);
+    if (!c || now - c.t > 600) { c = { t: now, prev: W.dijkstra(to).prev }; hopCache.set(to, c); }
+    return c.prev[from];
+  };
+  // a drivable polyline from one point to another along the roads
+  W.pathBetween = (ax, az, bx, bz) => {
+    const s = W.nearestEdge(ax, az, true), g = W.nearestEdge(bx, bz, true);
+    if (!s || !g) return null;
+    const pts = [{ x: ax, z: az }, { x: s.px, z: s.pz }];
+    if (s.e === g.e) {
+      pts.push({ x: g.px, z: g.pz }, { x: bx, z: bz });
+    } else {
+      const na = nodes[s.e.a], nb2 = nodes[s.e.b];
+      const { dist, prev } = W.dijkstra([[s.e.a, Math.hypot(na.x - s.px, na.z - s.pz)], [s.e.b, Math.hypot(nb2.x - s.px, nb2.z - s.pz)]]);
+      const ga = nodes[g.e.a], gb = nodes[g.e.b];
+      const ca = dist[g.e.a] + Math.hypot(ga.x - g.px, ga.z - g.pz), cb = dist[g.e.b] + Math.hypot(gb.x - g.px, gb.z - g.pz);
+      if (!Number.isFinite(Math.min(ca, cb))) return null;
+      const ids = [];
+      for (let c = ca <= cb ? g.e.a : g.e.b; c !== -1; c = prev[c]) ids.unshift(c);
+      for (const id of ids) pts.push({ x: nodes[id].x, z: nodes[id].z });
+      pts.push({ x: g.px, z: g.pz }, { x: bx, z: bz });
+    }
+    const out = [];
+    for (const p of pts) if (!out.length || Math.hypot(p.x - out[out.length - 1].x, p.z - out[out.length - 1].z) > 0.5) out.push(p);
+    let length = 0;
+    for (let k = 1; k < out.length; k++) length += Math.hypot(out[k].x - out[k - 1].x, out[k].z - out[k - 1].z);
+    return { points: out, length };
+  };
 
-  // ------------------------------------------------ queries
-  W.groundY = (x, z) => {
+  // ------------------------------------------------ queries (city island; regions.js extends these)
+  W.baseGroundY = (x, z) => {
     for (const r of W.ramps) {
       const rx = x - r.x, rz = z - r.z;
       const along = rx * r.dx + rz * r.dz;
@@ -683,10 +810,10 @@ export function buildWorld(scene, quality) {
     }
     return 0;
   };
-  W.isLand = (x, z) =>
+  W.baseIsLand = (x, z) =>
     (x >= LAND.minX + 1 && x <= LAND.maxX - 1 && z >= LAND.minZ + 1 && z <= LAND.maxZ - 1) ||
     (x >= PIER.minX && x <= PIER.maxX - 0.5 && z >= PIER.minZ + 0.6 && z <= PIER.maxZ - 0.6);
-  W.onRoad = (x, z) => {
+  W.baseOnRoad = (x, z) => {
     const lx = x + HALF, lz = z + HALF;
     const ox = ((lx % PITCH) + PITCH) % PITCH, oz = ((lz % PITCH) + PITCH) % PITCH;
     const inside = lx > -ROAD / 2 && lx < HALF * 2 + ROAD / 2 && lz > -ROAD / 2 && lz < HALF * 2 + ROAD / 2;
@@ -697,7 +824,18 @@ export function buildWorld(scene, quality) {
     if (i < 0 || j < 0 || i >= NB || j >= NB) return null;
     return W.blocks[i * NB + j];
   };
+  // what's underfoot on the city island (regions.js extends this)
+  W.baseSurface = (x, z) => {
+    if (W.baseOnRoad(x, z)) return 'road';
+    if (x >= PIER.minX && x <= PIER.maxX && z >= PIER.minZ && z <= PIER.maxZ) return 'paved';
+    if (W.blockAt(x, z) && W.baseGroundY(x, z) >= CURB - 0.01) return 'paved';
+    if (x > HALF + ROAD / 2) return 'sand';
+    return 'grass';
+  };
+  // sidewalk loops pedestrians walk (city blocks; regions add their own)
+  W.pedRings = W.blocks.map((b) => ({ x0: b.x0 + 2, z0: b.z0 + 2, x1: b.x1 - 2, z1: b.z1 - 2, i: b.i, j: b.j }));
   W.LANE = LANE;
   W.SPECIAL = SPECIAL;
+  buildRegions(scene, W);
   return W;
 }

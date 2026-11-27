@@ -200,7 +200,7 @@ export class Economy {
       R.best = Math.max(R.best, R.hits);
       for (const T of I.targets) T.up = false;
       G.hud.timer(null);
-      const onMission = G.missions.active && G.missions.index === 3;
+      const onMission = G.missions.isActive('iron-lesson');
       const pay = onMission ? 0 : R.hits * 8;
       if (pay) G.addMoney(pay);
       G.hud.big('RANGE', `${R.hits} hits · best ${R.best}${pay ? ` · +${fmtMoney(pay)}` : ''}`, 2.6);
@@ -276,7 +276,7 @@ export class Economy {
     const G = this.G, v = G.player.vehicle;
     if (!v) return;
     const W = G.wanted;
-    const firstJob = G.missions.active && G.missions.index === 0;
+    const firstJob = G.missions.isActive('fresh-coat');
     G.ui.openShop({
       kicker: 'Paint & Pay Customs', title: v.spec.name, sub: 'Upgrades turn this car into your personal ride.', accent: '#ff3fa4',
       items: () => {

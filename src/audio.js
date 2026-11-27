@@ -196,6 +196,7 @@ export class AudioSys {
         this.tone('sine', 120, 0.16, 0.45 * v, 0, 45);
     }
   }
+  ring() { for (let i = 0; i < 6; i++) this.tone('sine', i % 2 ? 1320 : 1760, 0.07, 0.07, i * 0.08); }
   empty() { this.tone('square', 2200, 0.025, 0.06); }
   reload() { this.tone('square', 900, 0.03, 0.06); this.tone('square', 1400, 0.03, 0.06, 0.45); this.tone('square', 700, 0.04, 0.07, 0.9); }
   whiz() { this.burst('bandpass', 4200, 0.12, 0.2, 3, 1500); }

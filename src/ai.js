@@ -1,5 +1,4 @@
 import { clamp, rand, wrapAngle, pick } from './util.js';
-import { LANE } from './config.js';
 
 // Lane-following driver used by civilian traffic and by police in pursuit.
 export class DriverAI {
@@ -32,13 +31,15 @@ export class DriverAI {
     const len = Math.hypot(B.x - A.x, B.z - A.z);
     const dx = (B.x - A.x) / len, dz = (B.z - A.z) / len;
     const rx = -dz, rz = dx;
-    const d = 10 + t * (len - 20);
-    this.v.x = A.x + dx * d + rx * LANE;
-    this.v.z = A.z + dz * d + rz * LANE;
+    const lane = W.laneOf(from, to);
+    const d = Math.min(len * 0.5, 10) + t * Math.max(0, len - 20);
+    this.v.x = A.x + dx * d + rx * lane;
+    this.v.z = A.z + dz * d + rz * lane;
     this.v.h = Math.atan2(dx, dz);
     this.v.vx = dx * this.cruise * 0.7;
     this.v.vz = dz * this.cruise * 0.7;
-    this.v.y = 0;
+    this.v.y = W.groundY(this.v.x, this.v.z);
+    this.v.onGround = true;
     this.from = from; this.to = to;
     this.next = this.chooseNext(to, from);
   }
@@ -75,7 +76,11 @@ export class DriverAI {
     const W = this.G.world;
     const n = W.nodes[node];
     if (this.mode === 'chase') {
+      // shortest path through the road graph, so pursuit works across bridges and islands
       const P = this.G.player.outdoorPos;
+      const goal = W.nearestNode(P.x, P.z);
+      const hop = node === goal ? -1 : W.nextHop(node, goal);
+      if (hop >= 0) return hop;
       let best = null, bd = Infinity;
       for (const m of n.nb) {
         const o = W.nodes[m];
@@ -143,12 +148,20 @@ export class DriverAI {
       let l2 = Math.hypot(C.x - B.x, C.z - B.z) || 1;
       const d2x = (C.x - B.x) / l2, d2z = (C.z - B.z) / l2;
       const r2x = -d2z, r2z = d2x;
-      const lane = chasing ? LANE * 0.4 : LANE;
+      const lane1 = W.laneOf(this.from, this.to) * (chasing ? 0.4 : 1);
+      const lane2 = W.laneOf(this.to, this.next) * (chasing ? 0.4 : 1);
+      const lane = lane1;
       const dot = d1x * d2x + d1z * d2z;
+      const cross = d1x * d2z - d1z * d2x;
       let cx, cz;
-      if (dot > 0.9) { cx = B.x + r1x * lane; cz = B.z + r1z * lane; }
-      else if (dot < -0.9) { cx = B.x; cz = B.z; }
-      else { cx = B.x + (r1x + r2x) * lane; cz = B.z + (r1z + r2z) * lane; }
+      if (dot < -0.9) { cx = B.x; cz = B.z; }
+      else if (Math.abs(cross) < 0.15) { cx = B.x + r1x * lane1; cz = B.z + r1z * lane1; }
+      else {
+        // where the incoming and outgoing lane lines cross
+        const ox = r2x * lane2 - r1x * lane1, oz = r2z * lane2 - r1z * lane1;
+        const t = (ox * d2z - oz * d2x) / cross;
+        cx = B.x + r1x * lane1 + d1x * t; cz = B.z + r1z * lane1 + d1z * t;
+      }
       const remaining = (cx - v.x) * d1x + (cz - v.z) * d1z;
       const L = 5 + Math.abs(vF) * 0.45;
       if (remaining > L) {

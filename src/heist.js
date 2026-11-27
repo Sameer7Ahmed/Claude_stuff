@@ -2,7 +2,6 @@ import { Npc } from './npc.js';
 import { Marker } from './pickups.js';
 import { fmtMoney, rand } from './util.js';
 
-export const HEIST_MISSION = 5; // index of "The Solano Job" in the mission list
 const DRILL_TIME = 34;
 const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -21,7 +20,7 @@ export class Heist {
 
   get bank() { return this.G.interiors.list.bank; }
   get closed() { return this.phase === 'cooldown' && this.cooldownT > 0; }
-  get available() { return this.G.missions.index >= HEIST_MISSION && this.phase === 'ready'; }
+  get available() { return this.G.missions.reached('solano-job') && this.phase === 'ready'; }
   get running() { return this.phase === 'active' || this.phase === 'escape'; }
 
   resetState() {
@@ -261,7 +260,7 @@ export class Heist {
     this.bag = 0;
     this.gold = false;
     G.hud.bag(null);
-    if (G.missions.active && G.missions.index === HEIST_MISSION) G.missions.fail(reason);
+    if (G.missions.isActive('solano-job')) G.missions.fail(reason);
     else G.hud.big('HEIST FAILED', reason, 3);
   }
 

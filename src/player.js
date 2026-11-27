@@ -58,6 +58,7 @@ export class Player {
     this.y = this.space.groundY(x, z);
     this.vy = 0; this.vel.x = this.vel.z = 0;
     this.downT = 0;
+    this.landX = x; this.landZ = z;
     this.model.root.rotation.set(0, h, 0);
     this.model.root.position.set(x, this.y, z);
   }
@@ -263,6 +264,8 @@ export class Player {
     else if (ok(ox, nz)) this.z = nz;
     const hit = G.circleVsBoxes(W.colliders, this.x, this.z, 0.35);
     if (hit) { this.x += hit.nx * hit.pen; this.z += hit.nz * hit.pen; }
+    if (W.isLand(this.x, this.z)) { this.landX = this.x; this.landZ = this.z; }
+    else if (this.landX !== undefined) { this.x = this.landX; this.z = this.landZ; }
     if (outdoors) {
       for (const v of G.vehicles) {
         const dx0 = this.x - v.x, dz0 = this.z - v.z;

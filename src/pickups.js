@@ -117,7 +117,7 @@ export class Marker {
     this.G = G;
     this.radius = radius;
     this.group = new THREE.Group();
-    this.beamMat = new THREE.MeshBasicMaterial({ color, map: beamTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, opacity: 0.55 });
+    this.beamMat = new THREE.MeshBasicMaterial({ color, map: beamTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, opacity: 0.55, fog: height < 30 });
     const beam = new THREE.Mesh(beamGeo, this.beamMat);
     beam.scale.set(radius * 0.8, height, radius * 0.8);
     this.ringMat = new THREE.MeshBasicMaterial({ color, map: ringTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });

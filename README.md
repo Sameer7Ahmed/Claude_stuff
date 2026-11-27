@@ -1,6 +1,6 @@
 # Neon Tides
 
-An original open-world driving and crime sandbox that runs in the browser. You arrive in **Port Solano**, a neon-lit island city with a beach, a pier and a downtown full of glass towers. Steal cars, take jobs from a fixer called Dex, buy guns, property and upgrades, and pull off a full bank heist.
+An original open-world driving and crime sandbox that runs in the browser. You arrive on the **Port Solano coast**: a neon-lit island city with glass towers downtown, linked by bridges to a canal-side suburb, a hilly headland, a container port and a lighthouse island. Steal cars, take jobs from a fixer called Dex, buy guns, property and upgrades, and pull off a full bank heist.
 
 Built with [three.js](https://threejs.org) (vendored in `vendor/`, MIT licence). There's no build step, and every model, texture and sound is generated in code.
 
@@ -29,7 +29,8 @@ python3 -m http.server 8000
 | Shift (in a car) | Nitro, once fitted |
 | F (hold) | Some actions are held: bagging cash, the gold |
 | H | Horn |
-| M | Full map |
+| M | Full map (click to set a waypoint; quick routes on the side) |
+| Y / X | Answer or ignore Dex's call |
 | P / Esc | Pause |
 | N | Mute |
 | Enter | Skip dialogue |
@@ -39,6 +40,17 @@ On touch devices an on-screen joystick and buttons appear automatically, and you
 ## What's in it
 
 - **Procedural island city**: a 7×7 grid of blocks with glass towers downtown, pastel low-rises, neon signs, parks, parking lots, a beach with palms and umbrellas, stunt ramps, a pier and lifeguard towers.
+- **The wider coast**: four regions, each a real drive from downtown.
+  - **Palm Heights** is a canal-side suburb with about 70 procedurally built homes (driveways, pools, docks and boats) and a humpback canal bridge. It's reached by the Coral Channel Bridge.
+  - **Sundown Bluffs** is a heightfield headland with switchback roads, pines and boulders, an observatory and a summit lookout. It's reached by the arched Sunset Span.
+  - **Harbor District** has container yards, gantry cranes, warehouses, fuel tanks and a moored freighter. It's reached by a lift bridge.
+  - **Lantern Key** is a resort island with a lighthouse whose beam sweeps the sea at night. It's reached by a long, curving cable-stayed causeway.
+  - Bridge decks, hills and slopes are real driving surfaces: climbs slow you, descents speed you up, and grass and sand cost grip. The ocean shader draws shallows and surf along every coastline, canal included.
+- **Direction**:
+  - A shortest-path GPS draws animated arrows on the road, the route on the minimap and full map, and gives turn-by-turn instructions with distances.
+  - An on-screen waypoint marker pins to the screen edge when the target is out of view. Tall objective beacons can be seen from across the coast.
+  - Dex phones with the next job: answer and the mission starts where you stand.
+  - The pause screen shows a journal of story progress, discovered regions and assets. Road signs point to each region, and each region greets you with a title card and a one-time discovery bonus.
 - **Day/night cycle**: a full day takes 12 minutes. The sky and ocean are drawn by shaders, building windows light up at night, street lamps cast pools of light, cars turn on their headlights and stars come out.
 - **Arcade car physics**: six vehicle types with grip and drift, handbrake slides, softer handling on sand, ramp jumps with airtime bonuses, crash damage, smoke, fire and explosions.
 - **Traffic AI**: cars drive in lanes on the road graph, turn at intersections, brake for cars and pedestrians, and back out when they get stuck.
@@ -50,8 +62,17 @@ On touch devices an on-screen joystick and buttons appear automatically, and you
 - **Police response**: patrol cars box you in at 1★. From 2★ officers get out, and from 3★ they shoot. A helicopter you can shoot down arrives at 4★, and tactical units at 5★. Hide in a building and they come through the door. Killing police escalates the heat, and they drop ammo when downed.
 - **Interiors**: five enterable buildings, each with its own layout, lighting and staff. Solano Bank has a lobby, teller line, manager's office, staff gate and vault. Iron Palm Arms has a counter, gun racks and a shooting range with pop-up targets. Then there's Late Mart, the motel safehouse, and the Neon Arcade with glowing cabinets and a back office.
 - **The Solano Job**: hold up the manager for the vault keycard, or take it off a guard. Swipe through the staff gate, set a thermal drill on the vault (it jams, and you have to restart it), and hold off police waves storming the lobby. Then bag the cash trolleys and the heavy gold, walk out into a 4–5★ cordon, and escape to the boat or lose the cops and reach Dex's lockup. The payout screen splits the take. The bank stays closed for a while afterwards and can be robbed again later.
-- **Story missions**: six jobs from Dex: a respray, a timed delivery, a beach race, a gun lesson at the range, a heat test, and the bank heist.
-- **Collectibles**: 12 hidden neon shells. Finding them all pays a bonus.
+- **Story missions**: nine jobs from Dex:
+  - a respray
+  - a timed delivery
+  - a car delivery to Palm Heights
+  - a beach race
+  - a gun lesson at the range
+  - a hill climb up the Bluffs
+  - a heat test
+  - a dockyard shootout over a crate that has to reach the lighthouse
+  - the bank heist
+- **Collectibles**: 16 hidden neon shells across the coast. Finding them all pays a bonus.
 - **Audio**: synthesized engine, tyres, sirens, helicopter rotor and impacts, plus two generative radio stations.
 - **HUD**: a rotating minimap with blips, a full map, money, wanted stars, a speedometer, vehicle and player health, mission objectives and timers.
 - Progress (money, missions and collectibles) is saved in `localStorage`.
@@ -61,7 +82,13 @@ On touch devices an on-screen joystick and buttons appear automatically, and you
 | File | Responsibility |
 | --- | --- |
 | `src/main.js` | Bootstrap, game state, main loop, world events (gunfire, explosions), respawns, saving |
-| `src/world.js` | City generation, colliders, road graph, ground height |
+| `src/world.js` | City generation, colliders, road graph and routing, ground height |
+| `src/layout.js` | Coast layout data: land shapes, bridges, region roads, region names |
+| `src/regions.js` | Builds the coast regions, bridges, road surfaces, signs and the shoreline mask |
+| `src/terrain.js` | Sundown Bluffs heightfield with carved roads and building pads |
+| `src/gps.js` | Route finding to the current goal, on-road arrows, turn instructions |
+| `src/guide.js` | What to do next: tracker, waypoint marker, region cards, tips, journal |
+| `src/phone.js` | Dex's phone calls and texts |
 | `src/env.js` | Sky, ocean, sun/moon lighting, day/night |
 | `src/vehicle.js` | Car physics and car-vs-car collisions |
 | `src/ai.js` | Lane-following driver for traffic and police |

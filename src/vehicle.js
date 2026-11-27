@@ -98,7 +98,8 @@ export class Vehicle {
     let vR = this.vx * rx + this.vz * rz;
     const g0 = W.groundY(this.x, this.z);
     this.onGround = this.y <= g0 + 0.06;
-    this.offroad = g0 < 0.1 && !W.onRoad(this.x, this.z);
+    const surf = W.surface(this.x, this.z);
+    this.offroad = surf === 'sand' || surf === 'grass';
     const dead = this.destroyed || this.health <= 0;
     this.steer = damp(this.steer, dead ? 0 : c.steer, 10, dt);
 
@@ -121,6 +122,10 @@ export class Vehicle {
         vF -= Math.sign(vF) * Math.min(Math.abs(vF), (dead ? 6 : 2.2) * dt);
       }
       vF -= vF * (this.offroad ? 0.25 : 0.04) * dt;
+      // gravity along the slope: hills slow you down going up and push you going down
+      const half = s.L * 0.45;
+      const grade = (W.groundY(this.x + fx * half, this.z + fz * half) - W.groundY(this.x - fx * half, this.z - fz * half)) / (2 * half);
+      if (Math.abs(grade) < 0.8) vF -= 9.8 * grade * 0.85 * dt;
       if (c.handbrake && !dead) vF -= Math.sign(vF) * Math.min(Math.abs(vF), 8 * dt);
       const grip = (c.handbrake && !dead ? 1.4 : s.grip * (1 + md.grip * 0.25)) * (this.offroad ? 0.7 : 1);
       this.slip = Math.abs(vR);
@@ -167,6 +172,7 @@ export class Vehicle {
     }
 
     this.collideWorld();
+    this.keepOnLand();
 
     // fire & explosion
     if (this.fireT > 0) {
@@ -175,6 +181,16 @@ export class Vehicle {
     }
     if (this.destroyed) this.deadT += dt;
     this.effects(dt);
+  }
+
+  // collisions can shove a car sideways off a bridge deck or a pier; never let it end up in the sea
+  keepOnLand() {
+    const W = this.G.world;
+    if (W.isLand(this.x, this.z)) { this.landX = this.x; this.landZ = this.z; return; }
+    if (this.landX === undefined) return;
+    this.x = this.landX; this.z = this.landZ;
+    this.vx *= -0.2; this.vz *= -0.2;
+    this.y = Math.max(this.y, W.groundY(this.x, this.z));
   }
 
   impact(amount, silent = false) {
@@ -304,6 +320,7 @@ export function collideVehicles(G) {
           const ia = 1 / ma, ib = 1 / mb, it = ia + ib;
           A.x -= nx * pen * (ia / it); A.z -= nz * pen * (ia / it);
           B.x += nx * pen * (ib / it); B.z += nz * pen * (ib / it);
+          A.keepOnLand(); B.keepOnLand();
           const rv = (B.vx - A.vx) * nx + (B.vz - A.vz) * nz;
           if (rv < 0) {
             const jimp = (-(1 + 0.25) * rv) / it;
